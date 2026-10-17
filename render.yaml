@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: whatsapp-buddy
+    runtime: node
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: npm run build
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 5000
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        value: mongodb+srv://poojasahuu2006_db_user:Pooja2006@cluster0.kpjsxdz.mongodb.net/whatsapp_buddy?retryWrites=true&w=majority
+      - key: CALENDAR_EMAIL
+        value: poojasahuu2006@gmail.com
+      - key: TIMEZONE
+        value: Asia/Kolkata
+      - key: EVOLUTION_API_URL
+        value: http://localhost:8080
+      - key: EVOLUTION_INSTANCE
+        value: cs-cst-evolution-api-da141464
+      - key: EVOLUTION_API_KEY
+        value: 61C1EB49-2704-4D2C-B24B-A63A6F659F07
