@@ -1,0 +1,297 @@
+{
+  "name": "Whatapp_Agent_Fixed",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatappbuddy",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -480,
+        -160
+      ],
+      "id": "8fe4c88b-920d-4f2b-8307-773981b7ded2",
+      "name": "Webhook",
+      "webhookId": "d5c1e552-1dbe-4e7e-9a46-e2127548a251"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "81cd4d9e-ceb3-49ee-ba00-a38860fca87d",
+              "leftValue": "={{ $json.body.data.key.fromMe }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -208,
+        -144
+      ],
+      "id": "eff4697a-56e7-410d-954f-36618cc46559",
+      "name": "If"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        96,
+        -288
+      ],
+      "id": "0b6069b3-1118-4066-be00-8c66d730d800",
+      "name": "No Operation, do nothing"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.body.data.message.conversation || $json.body.data.message.extendedTextMessage?.text }}\n",
+        "options": {
+          "systemMessage": "You are a helpful assistant for Nexus agency. You will reply to the user query in the smartest possible way but in strictly one sentence. When the user wants to book or schedule a call, consultation, or meeting, you MUST call the Google Calendar tool and pass Start and End formatted as valid ISO 8601 strings (e.g. 2026-09-23T16:00:00+05:30) calculated from current time in Asia/Kolkata timezone. Default meeting duration is 30 minutes. Do not extend the reply beyond one sentence."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        48,
+        16
+      ],
+      "id": "8695fe43-0c45-49fb-a66e-a6388b9959af",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -160,
+        320
+      ],
+      "id": "04b916bd-ceda-4f0f-b9bc-7a3a6129ab63",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Create a consultation meeting event on Google Calendar for poojasahuu2006@gmail.com in Asia/Kolkata (IST) timezone. You MUST provide Start and End as valid ISO 8601 strings with timezone offset +05:30 (example: 2026-09-23T16:00:00+05:30). Current Time: {{ $now.format('yyyy-MM-dd HH:mm:ss') }}. Provide Summary, Start, and End.",
+        "calendar": {
+          "__rl": true,
+          "value": "poojasahuu2006@gmail.com",
+          "mode": "list",
+          "cachedResultName": "poojasahuu2006@gmail.com"
+        },
+        "start": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Start', ``, 'string') }}",
+        "end": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('End', ``, 'string') }}",
+        "additionalFields": {
+          "summary": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Summary', 'Consultation with Nexus Agency', 'string') }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        112,
+        304
+      ],
+      "id": "a660d5f9-3b0e-40e1-af20-842d82a67f5e",
+      "name": "Create an event in Google Calendar",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "zIq4SR8WQNmJSXaC",
+          "name": "Google Calendar account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Use this tool to read and look up Nexus agency's services, pricing packages, delivery timelines, and FAQs.",
+        "documentId": {
+          "__rl": true,
+          "value": "1qWtucHwvHVXJAfzRPUnz12kQNX0EWFmkA9delB0I4LE",
+          "mode": "list",
+          "cachedResultName": "Nexus_Agency_KnowledgeBase",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1qWtucHwvHVXJAfzRPUnz12kQNX0EWFmkA9delB0I4LE/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1qWtucHwvHVXJAfzRPUnz12kQNX0EWFmkA9delB0I4LE/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.7,
+      "position": [
+        304,
+        304
+      ],
+      "id": "784e92b9-f02d-4fea-af28-3b25e3d700b1",
+      "name": "Get row(s) in sheet in Google Sheets",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "l9lEXMeni2hfgJj4",
+          "name": "Google Sheets account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://cst-evolution-api-da141464-620b10de.cloud-station.app/message/sendText/cs-cst-evolution-api-da141464",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "61C1EB49-2704-4D2C-B24B-A63A6F659F07"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{ $('Webhook').first().json.body.data.key.remoteJid.replace('@s.whatsapp.net', '') }}\n"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.output }}\n"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        512,
+        -160
+      ],
+      "id": "908926de-1f2b-4ffa-b38e-d13d2af4db47",
+      "name": "HTTP Request"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Operation, do nothing": {
+      "main": [
+        []
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create an event in Google Calendar": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet in Google Sheets": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
