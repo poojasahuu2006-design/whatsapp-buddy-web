@@ -29,7 +29,7 @@ export function AuthProvider({ children }) {
           setConnectionState(currentState);
 
           // If WhatsApp gets scanned & connected live, mark onboarding complete and update number
-          if (currentState === 'open') {
+          if (currentState === 'open' && !data.isSimulated) {
             setIsOnboarded(true);
             localStorage.setItem('wb_onboarded', 'true');
             if (data.number || data.owner) {
@@ -37,7 +37,7 @@ export function AuthProvider({ children }) {
               setConnectedNumber(formattedPhone);
               localStorage.setItem('wb_phone', formattedPhone);
             }
-          } else {
+          } else if (currentState !== 'open') {
             // When disconnected, clear connected phone from active view
             setConnectedNumber(null);
             localStorage.removeItem('wb_phone');

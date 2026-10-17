@@ -37,6 +37,7 @@ export const getConnectionState = async (req, res, next) => {
 export const disconnect = async (req, res, next) => {
   try {
     const instance = req.params.instance || req.query.instance;
+    evolutionService.setSimulatedState(false);
     const result = await evolutionService.logoutInstance(instance);
     res.json(result);
   } catch (err) {

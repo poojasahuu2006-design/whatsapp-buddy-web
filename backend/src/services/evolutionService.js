@@ -81,8 +81,10 @@ export class EvolutionService {
 
   // Simulation controls for testing/demo when CloudStation is offline
   setSimulatedState(connected = true) {
-    this.isSimulated = true;
-    this.simulatedConnected = connected;
+    this.isSimulated = connected === true;
+    this.simulatedConnected = connected === true;
+    this.cachedQr = null;
+    this.cachedQrTime = 0;
     return {
       isSimulated: this.isSimulated,
       state: connected ? 'open' : 'close'

@@ -39,7 +39,7 @@ export default function OnboardingPage() {
       const res = await fetch('/api/qr');
       if (res.ok) {
         const data = await res.json();
-        if (data.connectionState === 'open') {
+        if (data.connectionState === 'open' && !data.isSimulated) {
           setStatus('connected');
           setQrCode(null);
         } else {
@@ -48,7 +48,6 @@ export default function OnboardingPage() {
             setQrCode(data.base64);
             setQrTimer(25);
           } else if (data.fallbackQr) {
-            // CloudStation is sleeping or offline, show demo QR
             setQrCode(data.fallbackQr);
             if (data.error) {
               setApiError(data.error);
@@ -69,6 +68,14 @@ export default function OnboardingPage() {
   };
 
   useEffect(() => {
+    // Reset simulation when opening the onboarding scanner page
+    fetch('/api/simulate-connection', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ connected: false })
+    }).catch(() => {});
+    localStorage.removeItem('wb_simulated');
+    setStatus('waiting');
     fetchQr();
   }, []);
 
@@ -96,7 +103,7 @@ export default function OnboardingPage() {
         const res = await fetch('/api/connection-state');
         if (res.ok) {
           const data = await res.json();
-          if (data.state === 'open') {
+          if (data.state === 'open' && !data.isSimulated) {
             setStatus('connected');
             // Fetch real contacts count
             const cRes = await fetch('/api/contacts');
@@ -104,8 +111,8 @@ export default function OnboardingPage() {
               const cData = await cRes.json();
               setContactCount(cData.total || cData.chats?.length || 0);
             }
-          } else {
-            // If disconnected, revert to waiting and fetch QR
+          } else if (data.state !== 'open') {
+            // If disconnected, ensure status is waiting and fetch QR
             if (status === 'connected') {
               setStatus('waiting');
               fetchQr();
@@ -124,27 +131,26 @@ export default function OnboardingPage() {
   const handleDisconnectAndRescan = async () => {
     setIsRefreshing(true);
     try {
-      await fetch('/api/disconnect', { method: 'POST' });
+      await fetch('/api/simulate-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connected: false })
+      }).catch(() => {});
+      localStorage.removeItem('wb_simulated');
+      localStorage.removeItem('wb_onboarded');
+      localStorage.removeItem('wb_phone');
+      await fetch('/api/disconnect', { method: 'POST' }).catch(() => {});
       setStatus('waiting');
       setQrCode(null);
+      setIsSimulatedConnected(false);
       setTimeout(() => {
         fetchQr();
-      }, 1000);
+      }, 500);
     } catch (err) {
       console.error('Error disconnecting:', err);
     } finally {
       setIsRefreshing(false);
     }
-  };
-
-  // Handler for simulating WhatsApp scan (bypasses CloudStation 503 downtime)
-  const handleSimulateScan = async () => {
-    setIsRefreshing(true);
-    await simulateConnection(true);
-    setIsSimulatedConnected(true);
-    setStatus('connected');
-    setContactCount(5);
-    setIsRefreshing(false);
   };
 
   const handleContinue = () => {
@@ -265,13 +271,21 @@ export default function OnboardingPage() {
                             <span>{contactCount > 0 ? `${contactCount} contacts synchronized` : 'Contacts & chats synced'}</span>
                           </p>
                         </div>
+                        <button
+                          type="button"
+                          onClick={handleDisconnectAndRescan}
+                          className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50/80 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 transition shadow-sm"
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                          Not connected? Show QR Code Scanner
+                        </button>
                       </motion.div>
                     ) : qrCode ? (
                       <div className="flex flex-col items-center relative">
                         <img
                           src={qrCode}
                           alt="Evolution API Live WhatsApp QR Code"
-                          className="h-60 w-60 rounded-xl object-contain"
+                          className="h-60 w-60 rounded-xl object-contain shadow-sm"
                         />
                         {isCloudStationIssue && (
                           <span className="absolute bottom-2 rounded-full bg-cream-900/80 px-2.5 py-0.5 text-[10px] font-semibold text-white backdrop-blur">
@@ -331,7 +345,7 @@ export default function OnboardingPage() {
                   </ol>
                 </div>
 
-                {/* Simulation Option & Action Buttons */}
+                {/* Action Buttons */}
                 <div className="mt-6 space-y-3">
                   {status === 'connected' ? (
                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
@@ -340,31 +354,38 @@ export default function OnboardingPage() {
                         <ArrowRight className="h-4 w-4" />
                       </Button>
 
-                      <button
+                      <Button
                         type="button"
+                        variant="secondary"
+                        fullWidth
+                        size="md"
                         onClick={handleDisconnectAndRescan}
-                        className="w-full text-center text-xs font-semibold text-ink-500 hover:text-red-600 underline py-1 transition"
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
                       >
-                        Not connected or want to re-scan? Disconnect & Show QR Code
-                      </button>
+                        <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                        Disconnect & Show QR Scanner
+                      </Button>
                     </motion.div>
                   ) : (
-                    <>
-                      <button
+                    <div className="space-y-3">
+                      <Button
                         type="button"
-                        onClick={handleSimulateScan}
-                        className="group flex w-full items-center justify-center gap-2 rounded-xl border border-whatsapp-500 bg-whatsapp-500/10 px-4 py-3 text-xs font-bold text-whatsapp-800 transition hover:bg-whatsapp-500 hover:text-white"
+                        variant="secondary"
+                        fullWidth
+                        size="md"
+                        onClick={fetchQr}
+                        disabled={isRefreshing}
+                        className="flex items-center justify-center gap-2"
                       >
-                        <Zap className="h-4 w-4 text-whatsapp-600 group-hover:text-white transition" />
-                        <span>Simulate WhatsApp Scan (Bypass / Demo Mode)</span>
-                        <Sparkles className="h-3.5 w-3.5 opacity-80" />
-                      </button>
+                        <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                        Refresh WhatsApp QR Code
+                      </Button>
 
-                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-center text-xs text-amber-800 flex items-center justify-center gap-2">
-                        <ShieldAlert className="h-4 w-4 text-amber-600 flex-shrink-0" />
-                        <span>This page advances automatically when your camera scans the code or when using Demo Mode.</span>
+                      <div className="rounded-xl border border-cream-300 bg-cream-100 p-3 text-center text-xs text-ink-600 flex items-center justify-center gap-2">
+                        <ShieldAlert className="h-4 w-4 text-whatsapp-600 flex-shrink-0" />
+                        <span>Scan the live QR code above with your WhatsApp mobile camera.</span>
                       </div>
-                    </>
+                    </div>
                   )}
                 </div>
               </motion.div>
