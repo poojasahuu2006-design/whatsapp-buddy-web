@@ -1,6 +1,8 @@
 import { aiAgentService } from '../services/aiAgentService.js';
 import { evolutionService } from '../services/evolutionService.js';
 import { executionRuns } from './automationController.js';
+import { MessageLog } from '../models/MessageLog.js';
+import { Lead } from '../models/Lead.js';
 
 export const handleWebhook = async (req, res, next) => {
   const startTime = Date.now();
@@ -69,6 +71,34 @@ export const handleWebhook = async (req, res, next) => {
     
     console.log(`📤 [Evolution API Dispatch Status]:`, dispatchResult.success ? 'SUCCESS (Message Sent)' : `FAILED: ${dispatchResult.error}`);
     console.log(`======================================================\n`);
+
+    // Persist conversation and update lead profile in MongoDB
+    try {
+      await MessageLog.create({
+        senderNumber: recipientNumber,
+        senderName: data?.pushName || 'Customer',
+        customerMessage: incomingText,
+        aiReply: responseText,
+        toolUsed: toolUsed || 'None',
+        status: dispatchResult.success ? 'delivered' : 'failed'
+      });
+
+      await Lead.findOneAndUpdate(
+        { phoneNumber: recipientNumber },
+        {
+          $set: {
+            name: data?.pushName || undefined,
+            lastMessage: incomingText,
+            lastActive: new Date(),
+            leadStatus: toolUsed?.includes('Calendar') ? 'Booked Call' : 'Inquiry'
+          },
+          $inc: { messageCount: 1 }
+        },
+        { upsert: true, new: true }
+      );
+    } catch (dbErr) {
+      // Non-blocking in case MongoDB is temporarily unreachable
+    }
     
     steps.push({
       node: 'HTTP Request (Evolution API)',

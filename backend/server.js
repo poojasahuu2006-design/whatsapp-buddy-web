@@ -1,6 +1,7 @@
 import app from './src/app.js';
 import { config } from './src/config/config.js';
 import { evolutionService } from './src/services/evolutionService.js';
+import { connectDB } from './src/config/db.js';
 
 const PORT = config.port;
 
@@ -12,6 +13,9 @@ const server = app.listen(PORT, async () => {
   console.log(`📱 Webhook Receiver: http://localhost:${PORT}/api/whatappbuddy`);
   console.log(`⚙️  Evolution Gateway: ${config.evolutionInstance}`);
   console.log(`=================================================`);
+
+  // Connect to MongoDB Atlas
+  await connectDB();
 
   // Auto-register webhook with Evolution API
   try {
