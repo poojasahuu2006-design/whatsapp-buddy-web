@@ -5,7 +5,7 @@ services:
     plan: free
     region: singapore
     branch: main
-    buildCommand: npm --prefix frontend install && npm --prefix frontend run build && npm --prefix backend install
+    buildCommand: npm --prefix frontend install --include=dev && npm --prefix frontend run build && npm --prefix backend install
     startCommand: npm --prefix backend start
     envVars:
       - key: NODE_ENV
