@@ -3,9 +3,9 @@ import { config } from './src/config/config.js';
 import { evolutionService } from './src/services/evolutionService.js';
 import { connectDB } from './src/config/db.js';
 
-const PORT = config.port;
+const PORT = process.env.PORT || config.port || 5000;
 
-const server = app.listen(PORT, async () => {
+const server = app.listen(PORT, '0.0.0.0', async () => {
   console.log(`=================================================`);
   console.log(`🚀 WhatsApp Buddy Node.js & Express Server Started`);
   console.log(`📡 URL: http://localhost:${PORT}`);
