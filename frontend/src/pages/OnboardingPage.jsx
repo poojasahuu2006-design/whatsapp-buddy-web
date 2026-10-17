@@ -91,8 +91,6 @@ export default function OnboardingPage() {
 
   // Continuously poll real connection state from Evolution API
   useEffect(() => {
-    if (status === 'connected') return;
-
     const interval = setInterval(async () => {
       try {
         const res = await fetch('/api/connection-state');
@@ -106,6 +104,12 @@ export default function OnboardingPage() {
               const cData = await cRes.json();
               setContactCount(cData.total || cData.chats?.length || 0);
             }
+          } else {
+            // If disconnected, revert to waiting and fetch QR
+            if (status === 'connected') {
+              setStatus('waiting');
+              fetchQr();
+            }
           }
         }
       } catch {
@@ -115,6 +119,23 @@ export default function OnboardingPage() {
 
     return () => clearInterval(interval);
   }, [status]);
+
+  // Handler for disconnecting and scanning fresh QR code
+  const handleDisconnectAndRescan = async () => {
+    setIsRefreshing(true);
+    try {
+      await fetch('/api/disconnect', { method: 'POST' });
+      setStatus('waiting');
+      setQrCode(null);
+      setTimeout(() => {
+        fetchQr();
+      }, 1000);
+    } catch (err) {
+      console.error('Error disconnecting:', err);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   // Handler for simulating WhatsApp scan (bypasses CloudStation 503 downtime)
   const handleSimulateScan = async () => {
@@ -313,11 +334,19 @@ export default function OnboardingPage() {
                 {/* Simulation Option & Action Buttons */}
                 <div className="mt-6 space-y-3">
                   {status === 'connected' ? (
-                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
                       <Button fullWidth size="lg" onClick={() => setStep(2)}>
                         Continue with Linked WhatsApp
                         <ArrowRight className="h-4 w-4" />
                       </Button>
+
+                      <button
+                        type="button"
+                        onClick={handleDisconnectAndRescan}
+                        className="w-full text-center text-xs font-semibold text-ink-500 hover:text-red-600 underline py-1 transition"
+                      >
+                        Not connected or want to re-scan? Disconnect & Show QR Code
+                      </button>
                     </motion.div>
                   ) : (
                     <>

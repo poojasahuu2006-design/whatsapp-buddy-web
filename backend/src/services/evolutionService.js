@@ -514,6 +514,9 @@ export class EvolutionService {
       return { success: true, data: { status: 'DISCONNECTED', instance: targetInstance } };
     }
 
+    this.cachedQr = null;
+    this.cachedQrTime = 0;
+
     try {
       const res = await axios.delete(`${this.apiUrl}/instance/logout/${targetInstance}`, {
         headers: { apikey: this.apiKey },
