@@ -11,7 +11,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: EVOLUTION_API_URL
-        value: https://7c08561c2fb5b5.lhr.life
+        value: https://ended-pattern-food-fork.trycloudflare.com
       - key: EVOLUTION_API_KEY
         value: 61C1EB49-2704-4D2C-B24B-A63A6F659F07
       - key: EVOLUTION_INSTANCE
