@@ -453,12 +453,24 @@ export class EvolutionService {
           const initials = resolveInitials(displayName);
           const lastMsgText = extractMessageText(c.lastMessage) || 'Tap to chat';
 
-          const rawTime = c.updatedAt || c.conversationTimestamp || c.lastMessage?.messageTimestamp;
-          const timestamp = rawTime
-            ? (typeof rawTime === 'number' && rawTime < 1e12
-                ? new Date(rawTime * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                : new Date(rawTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
-            : 'Recent';
+          const rawTime = c.updatedAt || c.conversationTimestamp || c.lastMessage?.messageTimestamp || c.timestamp;
+          let timestamp = 'Recent';
+          if (rawTime && rawTime !== 'Invalid Date') {
+            const num = Number(rawTime);
+            if (!isNaN(num) && num > 0) {
+              const d = num < 1e12 ? new Date(num * 1000) : new Date(num);
+              if (!isNaN(d.getTime())) {
+                timestamp = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              }
+            } else if (typeof rawTime === 'string') {
+              const d = new Date(rawTime);
+              if (!isNaN(d.getTime())) {
+                timestamp = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              } else if (rawTime.toLowerCase() !== 'invalid date') {
+                timestamp = rawTime;
+              }
+            }
+          }
 
           return {
             id: c.id || jid,

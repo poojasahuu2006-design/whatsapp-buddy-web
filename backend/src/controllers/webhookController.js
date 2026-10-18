@@ -34,13 +34,10 @@ export const processIncomingMessage = async (data) => {
     recipientNumber = remoteJid.replace(/[^0-9]/g, '');
   }
 
-  const messageObj = data?.message || {};
-  const incomingText = 
-    messageObj?.conversation ||
-    messageObj?.extendedTextMessage?.text ||
-    messageObj?.imageMessage?.caption ||
-    messageObj?.videoMessage?.caption ||
-    messageObj?.documentMessage?.caption ||
+  const { extractMessageText } = await import('../services/evolutionService.js');
+  const incomingText = extractMessageText(data) ||
+    data?.message?.conversation ||
+    data?.message?.extendedTextMessage?.text ||
     data?.text ||
     '';
 
@@ -49,16 +46,17 @@ export const processIncomingMessage = async (data) => {
   }
 
   console.log(`\n======================================================`);
-  console.log(`📩 [WhatsApp Webhook] Incoming Message from: +${recipientNumber}`);
+  console.log(`📩 [WhatsApp Webhook] Incoming Message from: ${remoteJid || recipientNumber}`);
   console.log(`💬 Message: "${incomingText}"`);
 
   // Run AI Agent reasoning & tool execution
-  const { responseText, toolUsed, steps } = await aiAgentService.processMessage(incomingText, recipientNumber);
+  const { responseText, toolUsed, steps } = await aiAgentService.processMessage(incomingText, recipientNumber || remoteJid);
 
   console.log(`🤖 [Nexus Company AI Reply]: "${responseText}"`);
 
-  // Dispatches message back via WhatsApp (native or external)
-  const dispatchResult = await evolutionService.sendTextMessage(recipientNumber, responseText);
+  // Dispatches message back directly to sender remoteJid
+  const targetRecipient = remoteJid || recipientNumber;
+  const dispatchResult = await evolutionService.sendTextMessage(targetRecipient, responseText);
   
   console.log(`📤 [WhatsApp Dispatch Status]:`, dispatchResult.success ? 'SUCCESS (Message Sent)' : `FAILED: ${dispatchResult.error}`);
   console.log(`======================================================\n`);

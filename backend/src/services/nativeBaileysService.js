@@ -245,7 +245,7 @@ export class NativeBaileysService {
 
         for (const msg of m.messages) {
           const remoteJid = msg.key?.remoteJid || '';
-          if (!remoteJid || remoteJid.includes('@broadcast') || remoteJid.includes('@lid')) continue;
+          if (!remoteJid || remoteJid.includes('@broadcast')) continue;
 
           // Record in messagesMap
           const list = this.messagesMap.get(remoteJid) || [];
