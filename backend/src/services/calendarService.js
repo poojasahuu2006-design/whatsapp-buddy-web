@@ -8,28 +8,8 @@ export class CalendarService {
     this.calendarEmail = config.calendarEmail || process.env.CALENDAR_EMAIL || 'poojasahuu2006@gmail.com';
     this.timezone = config.timezone || process.env.TIMEZONE || 'Asia/Kolkata';
     
-    // In-memory persistent events store
-    this.events = [
-      {
-        id: 'cal-evt-1',
-        summary: 'Consultation with Nexus Agency',
-        clientName: 'Aarav Patel',
-        clientNumber: '919876543210',
-        calendarEmail: this.calendarEmail,
-        timezone: this.timezone,
-        startTime: this.formatIsoDate(1, 16, 0),
-        endTime: this.formatIsoDate(1, 16, 30),
-        displayTime: 'Tomorrow at 4:00 PM IST',
-        status: 'confirmed',
-        createdAt: new Date().toISOString(),
-        googleCalendarUrl: this.buildGoogleCalendarUrl(
-          'Consultation with Nexus Agency - Aarav Patel',
-          this.formatIsoDate(1, 16, 0),
-          this.formatIsoDate(1, 16, 30),
-          'Discovery consultation booked via WhatsApp Buddy'
-        )
-      }
-    ];
+    // In-memory persistent events store (empty until scheduled by user or WhatsApp client)
+    this.events = [];
 
     // Initialize Google API Client if credentials exist
     this.googleCalendarClient = null;

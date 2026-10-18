@@ -269,8 +269,9 @@ export default function CalendarPage() {
               <p className="text-xs text-ink-400 mt-1">
                 Tasks booked by customers on WhatsApp or created manually will appear here.
               </p>
-              <Button size="sm" className="mt-4" onClick={handleTestSchedule}>
-                Run Test Booking
+              <Button size="sm" className="mt-4" onClick={() => setModalOpen(true)}>
+                <Plus className="h-4 w-4" />
+                Schedule New Task
               </Button>
             </div>
           ) : (
