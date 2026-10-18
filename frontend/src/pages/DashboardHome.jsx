@@ -593,8 +593,22 @@ export default function DashboardHome() {
                 <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-cream-200 text-ink-400">
                   <Inbox className="h-8 w-8" />
                 </div>
-                <p className="mt-4 text-sm font-bold text-ink-700">No contacts matching search</p>
-                <p className="mt-1 text-xs text-ink-400">Try changing your query or click Refresh Contacts.</p>
+                <p className="mt-4 text-sm font-bold text-ink-700">
+                  {searchQuery ? `No contacts matching "${searchQuery}"` : 'Syncing real contacts from WhatsApp...'}
+                </p>
+                <p className="mt-1 text-xs text-ink-400 max-w-sm">
+                  {searchQuery
+                    ? 'Try changing your search term or clear the filter.'
+                    : 'WhatsApp is connected! If your phone just linked, contacts are downloading. Click "Refresh Contacts" to load.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={checkConnectionAndContacts}
+                  className="mt-4 inline-flex items-center gap-1.5 rounded-xl border border-whatsapp-500 bg-whatsapp-50 px-4 py-2 text-xs font-semibold text-whatsapp-800 hover:bg-whatsapp-100 transition shadow-2xs"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${loadingContacts ? 'animate-spin' : ''}`} />
+                  Refresh Contacts
+                </button>
               </div>
             ) : (
               <div className="divide-y divide-cream-300/60 max-h-[600px] overflow-y-auto">
