@@ -11,7 +11,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: EVOLUTION_API_URL
-        value: https://66b1c523d6147d.lhr.life
+        value: https://whatsapp-buddy-pooja.loca.lt
       - key: MONGODB_URI
         value: mongodb+srv://poojasahuu2006_db_user:Pooja2006@cluster0.kpjsxdz.mongodb.net/whatsapp_buddy?retryWrites=true&w=majority
       - key: CALENDAR_EMAIL

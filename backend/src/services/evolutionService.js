@@ -79,6 +79,13 @@ export class EvolutionService {
     this.simulatedConnected = false;
   }
 
+  getHeaders() {
+    return {
+      apikey: this.apiKey,
+      'Bypass-Tunnel-Reminder': 'true'
+    };
+  }
+
   // Simulation controls for testing/demo when CloudStation is offline
   setSimulatedState(connected = true) {
     this.isSimulated = connected === true;
@@ -103,7 +110,7 @@ export class EvolutionService {
           integration: 'WHATSAPP-BAILEYS'
         },
         {
-          headers: { apikey: this.apiKey },
+          headers: this.getHeaders(),
           timeout: 10000
         }
       );
@@ -136,7 +143,7 @@ export class EvolutionService {
           }
         },
         {
-          headers: { apikey: this.apiKey },
+          headers: this.getHeaders(),
           timeout: 10000
         }
       );
@@ -162,7 +169,7 @@ export class EvolutionService {
     const targetInstance = instance || this.instance;
     try {
       const res = await axios.get(`${this.apiUrl}/instance/connectionState/${targetInstance}`, {
-        headers: { apikey: this.apiKey },
+        headers: this.getHeaders(),
         timeout: 6000
       });
       const owner = res.data?.instance?.owner || '';
@@ -223,7 +230,7 @@ export class EvolutionService {
 
     try {
       const res = await axios.get(`${this.apiUrl}/instance/connect/${targetInstance}`, {
-        headers: { apikey: this.apiKey },
+        headers: this.getHeaders(),
         timeout: 10000
       });
 

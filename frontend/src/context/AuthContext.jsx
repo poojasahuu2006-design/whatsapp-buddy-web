@@ -124,7 +124,7 @@ export function AuthProvider({ children }) {
         user,
         connectedNumber,
         connectionState,
-        isWhatsAppConnected: connectionState === 'open' || isOnboarded || !!connectedNumber,
+        isWhatsAppConnected: connectionState === 'open',
         login,
         signup,
         completeOnboarding,

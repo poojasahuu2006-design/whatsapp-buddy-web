@@ -47,7 +47,7 @@ export default function DashboardHome() {
   const [generatingAi, setGeneratingAi] = useState(false);
   const [aiNotice, setAiNotice] = useState(null);
 
-  // Check connection state and fetch contacts if open or synced
+  // Check connection state and fetch contacts ONLY if actually open
   const checkConnectionAndContacts = async () => {
     try {
       const stateRes = await fetch('/api/connection-state');
@@ -58,25 +58,23 @@ export default function DashboardHome() {
         setConnectionStatus(currentState);
       }
 
-      // Fetch real contacts from WhatsApp sync
-      const cRes = await fetch('/api/contacts');
-      if (cRes.ok) {
-        const cData = await cRes.json();
-        if (cData.chats && cData.chats.length > 0) {
-          setContacts(cData.chats);
-          setConnectionStatus('open');
-        } else if (cData.connected) {
-          setConnectionStatus('open');
-        } else {
-          setContacts([]);
-          if (currentState !== 'open') fetchDashboardQr();
+      // ONLY fetch & display real contacts if WhatsApp is actively connected ('open')!
+      if (currentState === 'open') {
+        const cRes = await fetch('/api/contacts');
+        if (cRes.ok) {
+          const cData = await cRes.json();
+          setContacts(cData.chats || []);
         }
-      } else if (currentState !== 'open') {
+      } else {
+        // Not connected: strictly clear contacts and fetch live QR code to scan
+        setContacts([]);
         fetchDashboardQr();
       }
     } catch (err) {
       console.error('Connection check error:', err);
       setConnectionStatus('close');
+      setContacts([]);
+      fetchDashboardQr();
     } finally {
       setLoadingContacts(false);
       setStatsLoading(false);
@@ -92,11 +90,13 @@ export default function DashboardHome() {
         const data = await res.json();
         if (data.connectionState === 'open') {
           setConnectionStatus('open');
+          const cRes = await fetch('/api/contacts');
+          if (cRes.ok) {
+            const cData = await cRes.json();
+            setContacts(cData.chats || []);
+          }
         } else if (data.base64) {
           setDashboardQr(data.base64);
-          setQrTimer(25);
-        } else if (data.fallbackQr) {
-          setDashboardQr(data.fallbackQr);
           setQrTimer(25);
         }
       }
@@ -123,15 +123,16 @@ export default function DashboardHome() {
           
           if (currentState !== connectionStatus) {
             setConnectionStatus(currentState);
-            if (currentState === 'open' || contacts.length === 0) {
+            if (currentState === 'open') {
+              // Phone scanned! Load contacts and chats now!
               const cRes = await fetch('/api/contacts');
               if (cRes.ok) {
                 const cData = await cRes.json();
-                if (cData.chats && cData.chats.length > 0) {
-                  setContacts(cData.chats);
-                }
+                setContacts(cData.chats || []);
               }
-            } else if (currentState !== 'open' && contacts.length === 0) {
+            } else {
+              // Disconnected: clear contacts and show QR code to scan
+              setContacts([]);
               fetchDashboardQr();
             }
           }
@@ -305,7 +306,7 @@ export default function DashboardHome() {
     return true;
   });
 
-  const isLinked = connectionStatus === 'open' || contacts.length > 0;
+  const isLinked = connectionStatus === 'open';
 
   return (
     <div className="space-y-8">
@@ -408,8 +409,8 @@ export default function DashboardHome() {
         ))}
       </div>
 
-      {/* CONDITIONAL CONTENT: IF WHATSAPP NOT LINKED AND NO CONTACTS -> SHOW LIVE QR CODE SCANNER */}
-      {connectionStatus !== 'open' && contacts.length === 0 ? (
+      {/* CONDITIONAL CONTENT: IF WHATSAPP NOT LINKED -> ALWAYS SHOW LIVE QR CODE SCANNER */}
+      {connectionStatus !== 'open' ? (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
