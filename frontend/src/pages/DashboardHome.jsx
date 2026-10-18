@@ -64,6 +64,9 @@ export default function DashboardHome() {
         const cData = await cRes.json();
         if (cData.chats && cData.chats.length > 0) {
           setContacts(cData.chats);
+          setConnectionStatus('open');
+        } else if (cData.connected) {
+          setConnectionStatus('open');
         } else {
           setContacts([]);
           if (currentState !== 'open') fetchDashboardQr();
@@ -302,6 +305,8 @@ export default function DashboardHome() {
     return true;
   });
 
+  const isLinked = connectionStatus === 'open' || contacts.length > 0;
+
   return (
     <div className="space-y-8">
       {/* Top Header with Real Status */}
@@ -309,13 +314,18 @@ export default function DashboardHome() {
         <div>
           <div className="flex items-center gap-2.5">
             <h1 className="font-serif text-3xl font-bold text-ink-900">Dashboard</h1>
-            {connectionStatus === 'open' ? (
+            {isLinked ? (
               <span className="flex items-center gap-1.5 rounded-full bg-whatsapp-50 px-3 py-0.5 text-xs font-bold text-whatsapp-700 border border-whatsapp-200">
                 <span className="relative flex h-2 w-2">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-whatsapp-400 opacity-75"></span>
                   <span className="relative inline-flex h-2 w-2 rounded-full bg-whatsapp-500"></span>
                 </span>
                 WhatsApp Linked (Live)
+              </span>
+            ) : connectionStatus === 'connecting' ? (
+              <span className="flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-0.5 text-xs font-bold text-amber-700 border border-amber-200">
+                <RefreshCw className="h-3 w-3 animate-spin text-amber-600" />
+                Syncing WhatsApp...
               </span>
             ) : (
               <span className="flex items-center gap-1.5 rounded-full bg-red-50 px-3 py-0.5 text-xs font-bold text-red-600 border border-red-200">
@@ -325,14 +335,14 @@ export default function DashboardHome() {
             )}
           </div>
           <p className="mt-1 text-sm text-ink-500">
-            {connectionStatus === 'open'
+            {isLinked
               ? 'Your WhatsApp is connected. View real contacts and automate 1-sentence AI responses.'
               : 'Please scan the live QR code below with your WhatsApp app (Linked Devices) to connect.'}
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          {connectionStatus === 'open' ? (
+          {isLinked ? (
             <>
               <Button size="sm" onClick={checkConnectionAndContacts}>
                 <RefreshCw className={`h-4 w-4 ${loadingContacts ? 'animate-spin' : ''}`} />

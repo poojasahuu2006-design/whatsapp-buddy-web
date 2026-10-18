@@ -37,10 +37,17 @@ export function AuthProvider({ children }) {
               setConnectedNumber(formattedPhone);
               localStorage.setItem('wb_phone', formattedPhone);
             }
-          } else if (currentState !== 'open') {
-            // When disconnected, clear connected phone from active view
-            setConnectedNumber(null);
-            localStorage.removeItem('wb_phone');
+          }
+        }
+
+        // Also verify with /api/contacts to confirm linked status when chats are synced
+        const cRes = await fetch('/api/contacts').catch(() => null);
+        if (cRes && cRes.ok) {
+          const cData = await cRes.json();
+          if (cData.connected || (cData.chats && cData.chats.length > 0)) {
+            setConnectionState('open');
+            setIsOnboarded(true);
+            localStorage.setItem('wb_onboarded', 'true');
           }
         }
       } catch {
@@ -49,7 +56,7 @@ export function AuthProvider({ children }) {
     };
 
     checkStatus();
-    const interval = setInterval(checkStatus, 3000);
+    const interval = setInterval(checkStatus, 4000);
     return () => clearInterval(interval);
   }, []);
 
@@ -117,7 +124,7 @@ export function AuthProvider({ children }) {
         user,
         connectedNumber,
         connectionState,
-        isWhatsAppConnected: connectionState === 'open',
+        isWhatsAppConnected: connectionState === 'open' || isOnboarded || !!connectedNumber,
         login,
         signup,
         completeOnboarding,
