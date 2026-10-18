@@ -3,7 +3,7 @@ dotenv.config();
 
 export const config = {
   port: process.env.PORT || 5000,
-  evolutionApiUrl: process.env.EVOLUTION_API_URL || 'https://11d14be2e99538ae-152-58-31-77.serveousercontent.com',
+  evolutionApiUrl: process.env.EVOLUTION_API_URL || 'https://7c08561c2fb5b5.lhr.life',
   evolutionInstance: process.env.EVOLUTION_INSTANCE || 'cs-cst-evolution-api-da141464',
   evolutionApiKey: '61C1EB49-2704-4D2C-B24B-A63A6F659F07',
   calendarEmail: process.env.CALENDAR_EMAIL || 'poojasahuu2006@gmail.com',

@@ -254,7 +254,8 @@ export class EvolutionService {
         success: false,
         error: cleanError,
         isOffline: true,
-        fallbackQr: generateFallbackQrSvg(),
+        fallbackQr: null,
+        base64: null,
         instance: targetInstance
       };
     }
