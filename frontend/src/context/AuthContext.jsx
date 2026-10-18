@@ -28,7 +28,6 @@ export function AuthProvider({ children }) {
           const currentState = data.state || 'close';
           setConnectionState(currentState);
 
-          // If WhatsApp gets scanned & connected live, mark onboarding complete and update number
           if (currentState === 'open' && !data.isSimulated) {
             setIsOnboarded(true);
             localStorage.setItem('wb_onboarded', 'true');
@@ -37,17 +36,10 @@ export function AuthProvider({ children }) {
               setConnectedNumber(formattedPhone);
               localStorage.setItem('wb_phone', formattedPhone);
             }
-          }
-        }
-
-        // Also verify with /api/contacts to confirm linked status when chats are synced
-        const cRes = await fetch('/api/contacts').catch(() => null);
-        if (cRes && cRes.ok) {
-          const cData = await cRes.json();
-          if (cData.connected || (cData.chats && cData.chats.length > 0)) {
-            setConnectionState('open');
-            setIsOnboarded(true);
-            localStorage.setItem('wb_onboarded', 'true');
+          } else {
+            // Strictly reset to disconnected state until phone is scanned
+            setConnectedNumber(null);
+            localStorage.removeItem('wb_phone');
           }
         }
       } catch {
@@ -56,7 +48,7 @@ export function AuthProvider({ children }) {
     };
 
     checkStatus();
-    const interval = setInterval(checkStatus, 4000);
+    const interval = setInterval(checkStatus, 3000);
     return () => clearInterval(interval);
   }, []);
 
