@@ -6,6 +6,7 @@ import automationRoutes from './automationRoutes.js';
 import calendarRoutes from './calendarRoutes.js';
 import { Lead } from '../models/Lead.js';
 import { MessageLog } from '../models/MessageLog.js';
+import { config } from '../config/config.js';
 
 const router = Router();
 
