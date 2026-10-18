@@ -47,13 +47,12 @@ export default function OnboardingPage() {
           if (data.base64) {
             setQrCode(data.base64);
             setQrTimer(25);
-          } else if (data.fallbackQr) {
-            setQrCode(data.fallbackQr);
+            setApiError(null);
+          } else {
+            setQrCode(null);
             if (data.error) {
               setApiError(data.error);
             }
-          } else if (data.error) {
-            setApiError(data.error);
           }
         }
       } else {
@@ -287,16 +286,30 @@ export default function OnboardingPage() {
                           alt="Evolution API Live WhatsApp QR Code"
                           className="h-60 w-60 rounded-xl object-contain shadow-sm"
                         />
-                        {isCloudStationIssue && (
-                          <span className="absolute bottom-2 rounded-full bg-cream-900/80 px-2.5 py-0.5 text-[10px] font-semibold text-white backdrop-blur">
-                            Preview QR (CloudStation Sleeping)
-                          </span>
-                        )}
                       </div>
                     ) : (
-                      <div className="flex flex-col items-center justify-center gap-3 py-12">
-                        <Loader2 className="h-8 w-8 animate-spin text-whatsapp-500" />
-                        <span className="text-xs text-ink-500 font-medium">Loading live QR from Evolution API...</span>
+                      <div className="flex flex-col items-center justify-center gap-3 py-8 text-center max-w-xs">
+                        {apiError ? (
+                          <>
+                            <AlertTriangle className="h-10 w-10 text-amber-500" />
+                            <p className="font-bold text-sm text-ink-900">WhatsApp Gateway Unreachable</p>
+                            <p className="text-xs text-ink-500 mt-1">{apiError}</p>
+                            <button
+                              type="button"
+                              onClick={fetchQr}
+                              disabled={isRefreshing}
+                              className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-whatsapp-500 bg-whatsapp-50 px-3 py-1.5 text-xs font-semibold text-whatsapp-800 hover:bg-whatsapp-100 transition"
+                            >
+                              <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                              Try Connecting Again
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <Loader2 className="h-8 w-8 animate-spin text-whatsapp-500" />
+                            <span className="text-xs text-ink-500 font-medium">Generating live QR from WhatsApp Baileys...</span>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
