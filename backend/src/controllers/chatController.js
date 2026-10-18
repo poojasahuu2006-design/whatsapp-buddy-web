@@ -7,30 +7,15 @@ export const getContacts = async (req, res, next) => {
     const connState = await evolutionService.getConnectionState();
     const chatsResult = await evolutionService.getChats();
 
-    // If chats/contacts exist in database from WhatsApp sync, return them!
-    if (chatsResult.chats && chatsResult.chats.length > 0) {
-      return res.json({
-        ...chatsResult,
-        connected: connState.state === 'open' || chatsResult.chats.length > 0,
-        state: connState.state
-      });
-    }
-
-    if (connState.state !== 'open') {
-      return res.json({
-        success: false,
-        connected: false,
-        state: connState.state,
-        message: 'WhatsApp is not connected. Scan the QR code in Linked Devices to connect.',
-        chats: [],
-        total: 0
-      });
-    }
+    const chatsList = chatsResult.chats || [];
+    const isConnected = connState.state === 'open' || chatsList.length > 0;
 
     res.json({
-      ...chatsResult,
-      connected: true,
-      state: 'open'
+      success: true,
+      total: chatsList.length,
+      chats: chatsList,
+      connected: isConnected,
+      state: connState.state || (isConnected ? 'open' : 'close')
     });
   } catch (err) {
     next(err);
@@ -77,7 +62,7 @@ export const aiReply = async (req, res, next) => {
     const dispatchResult = await evolutionService.sendTextMessage(number, responseText);
 
     steps.push({
-      node: 'Evolution API Dispatch',
+      node: 'WhatsApp Dispatch',
       status: dispatchResult.success ? 'done' : 'warning',
       detail: dispatchResult.success
         ? `Sent 1-sentence AI reply to +${number}`

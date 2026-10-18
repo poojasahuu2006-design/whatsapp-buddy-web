@@ -110,7 +110,6 @@ export class EvolutionService {
       console.log(`[EvolutionService] Webhook configured for ${targetInstance} -> http://host.docker.internal:5000/api/whatappbuddy`);
       return { success: true, data: res.data };
     } catch (err) {
-      // Non-fatal if using native Baileys
       return { success: false, error: cleanErrorMessage(err) };
     }
   }
@@ -157,7 +156,7 @@ export class EvolutionService {
         };
       }
     } catch {
-      // External API unavailable, fallback to native state
+      // External API unavailable
     }
 
     return {
@@ -193,9 +192,7 @@ export class EvolutionService {
           number: currentState.number
         };
       }
-    } catch {
-      // ignore check error and proceed
-    }
+    } catch {}
 
     // Cache QR code for 5 seconds to avoid flooding the socket
     const now = Date.now();
@@ -230,7 +227,7 @@ export class EvolutionService {
       externalFailed = true;
     }
 
-    // 2. If external Evolution API is unavailable or didn't return a QR, fallback to Native Baileys engine
+    // 2. Fallback to Native Baileys engine
     if (externalFailed) {
       try {
         const nativeQr = await nativeBaileysService.getQrCode();
@@ -252,166 +249,96 @@ export class EvolutionService {
     };
   }
 
-  // Fetch real chats and contacts
+  // Fetch real chats and contacts (merges native Baileys and external Evolution API)
   async getChats(instance = this.instance) {
     const targetInstance = instance || this.instance;
 
+    // 1. If in simulation mode
     if (this.isSimulated && this.simulatedConnected) {
-      return {
-        success: true,
-        total: 5,
-        chats: [
-          {
-            id: '919876543210@s.whatsapp.net',
-            remoteJid: '919876543210@s.whatsapp.net',
-            phone: '919876543210',
-            name: 'Aarav Patel',
-            initials: 'AP',
-            color: 'green',
-            isGroup: false,
-            unread: 1,
-            lastMessage: 'Can I schedule a consultation call tomorrow at 4 PM?',
-            timestamp: '2 min ago'
-          },
-          {
-            id: '919876543211@s.whatsapp.net',
-            remoteJid: '919876543211@s.whatsapp.net',
-            phone: '919876543211',
-            name: 'Sara Khan',
-            initials: 'SK',
-            color: 'purple',
-            isGroup: false,
-            unread: 0,
-            lastMessage: 'What services does Nexus agency provide?',
-            timestamp: '14 min ago'
-          },
-          {
-            id: '919876543212@s.whatsapp.net',
-            remoteJid: '919876543212@s.whatsapp.net',
-            phone: '919876543212',
-            name: 'Rohan Mehta',
-            initials: 'RM',
-            color: 'blue',
-            isGroup: false,
-            unread: 0,
-            lastMessage: 'Thanks! The Google Calendar invite just popped up on my phone.',
-            timestamp: '45 min ago'
-          }
-        ]
-      };
+      return await nativeBaileysService.getChats();
     }
 
+    // 2. Try external Evolution API
+    let externalChats = [];
     try {
       const [chatsRes, contactsRes] = await Promise.allSettled([
         axios.post(
           `${this.apiUrl}/chat/findChats/${targetInstance}`,
           {},
-          { headers: { apikey: this.apiKey }, timeout: 5000 }
+          { headers: { apikey: this.apiKey }, timeout: 3000 }
         ),
         axios.post(
           `${this.apiUrl}/chat/findContacts/${targetInstance}`,
           {},
-          { headers: { apikey: this.apiKey }, timeout: 5000 }
+          { headers: { apikey: this.apiKey }, timeout: 3000 }
         )
       ]);
 
       const rawChats = chatsRes.status === 'fulfilled' && Array.isArray(chatsRes.value.data) ? chatsRes.value.data : [];
       const rawContacts = contactsRes.status === 'fulfilled' && Array.isArray(contactsRes.value.data) ? contactsRes.value.data : [];
 
-      const chatMap = new Map();
+      if (rawChats.length > 0 || rawContacts.length > 0) {
+        const chatMap = new Map();
 
-      for (const c of rawChats) {
-        const jid = c.remoteJid || c.id || '';
-        if (jid && !jid.endsWith('@broadcast') && !jid.endsWith('@lid')) {
-          chatMap.set(jid, c);
-        }
-      }
-
-      for (const c of rawContacts) {
-        const jid = c.remoteJid || c.id || '';
-        if (jid && !jid.endsWith('@broadcast') && !jid.endsWith('@lid')) {
-          if (!chatMap.has(jid)) {
+        for (const c of rawChats) {
+          const jid = c.remoteJid || c.id || '';
+          if (jid && !jid.endsWith('@broadcast') && !jid.endsWith('@lid')) {
             chatMap.set(jid, c);
-          } else {
-            const existing = chatMap.get(jid);
-            if (!existing.pushName && c.pushName) existing.pushName = c.pushName;
-            if (!existing.profilePicUrl && c.profilePicUrl) existing.profilePicUrl = c.profilePicUrl;
           }
         }
+
+        for (const c of rawContacts) {
+          const jid = c.remoteJid || c.id || '';
+          if (jid && !jid.endsWith('@broadcast') && !jid.endsWith('@lid')) {
+            if (!chatMap.has(jid)) {
+              chatMap.set(jid, c);
+            }
+          }
+        }
+
+        const colors = ['green', 'orange', 'purple', 'blue', 'pink', 'teal'];
+        externalChats = Array.from(chatMap.values()).map((c, index) => {
+          const jid = c.remoteJid || c.id || '';
+          const isGroup = jid.endsWith('@g.us') || c.isGroup === true;
+          const rawPhone = isGroup ? '' : jid.replace('@s.whatsapp.net', '').replace(/[^0-9]/g, '');
+          const displayName = c.pushName || c.name || c.verifiedName || (rawPhone ? `+${rawPhone}` : `Contact #${index + 1}`);
+
+          const initials = (displayName || 'WA')
+            .split(' ')
+            .filter(Boolean)
+            .map((n) => n[0])
+            .slice(0, 2)
+            .join('')
+            .toUpperCase() || 'WA';
+
+          return {
+            id: c.id || jid,
+            remoteJid: jid,
+            phone: rawPhone,
+            name: displayName,
+            initials,
+            color: colors[index % colors.length],
+            isGroup,
+            unread: c.unreadCount || 0,
+            lastMessage: c.lastMessage?.message || c.lastMessage?.conversation || 'Synced from WhatsApp',
+            timestamp: c.updatedAt
+              ? new Date(c.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              : 'Recent'
+          };
+        });
       }
+    } catch {}
 
-      const mergedList = Array.from(chatMap.values());
-      const colors = ['green', 'orange', 'purple', 'blue', 'pink', 'teal'];
-
-      const formatted = mergedList.map((c, index) => {
-        const jid = c.remoteJid || c.id || '';
-        const isGroup = jid.endsWith('@g.us') || c.isGroup === true;
-        const rawPhone = isGroup ? '' : jid.replace('@s.whatsapp.net', '').replace(/[^0-9]/g, '');
-        
-        let displayName = c.pushName || c.name || c.verifiedName;
-        if (!displayName) {
-          if (isGroup) {
-            displayName = 'WhatsApp Group';
-          } else if (rawPhone) {
-            displayName = `+${rawPhone}`;
-          } else {
-            displayName = `Contact #${index + 1}`;
-          }
-        }
-
-        let lastMsg = 'Synced from WhatsApp';
-        const lm = c.lastMessage;
-        if (lm) {
-          if (typeof lm.message === 'string') {
-            lastMsg = lm.message;
-          } else if (lm.message?.conversation) {
-            lastMsg = lm.message.conversation;
-          } else if (lm.message?.extendedTextMessage?.text) {
-            lastMsg = lm.message.extendedTextMessage.text;
-          } else if (lm.pushName && lm.messageType) {
-            lastMsg = `[${lm.messageType}]`;
-          }
-        }
-
-        const initials = (displayName || 'WA')
-          .split(' ')
-          .filter(Boolean)
-          .map((n) => n[0])
-          .slice(0, 2)
-          .join('')
-          .toUpperCase() || 'WA';
-
-        const color = colors[index % colors.length];
-
-        return {
-          id: c.id || jid,
-          remoteJid: jid,
-          phone: rawPhone,
-          name: displayName,
-          initials,
-          color,
-          isGroup,
-          unread: c.unreadCount || 0,
-          lastMessage: lastMsg,
-          timestamp: c.updatedAt
-            ? new Date(c.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            : 'Recent',
-          profilePicUrl: c.profilePicUrl || null
-        };
-      });
-
+    if (externalChats.length > 0) {
       return {
         success: true,
-        total: formatted.length,
-        chats: formatted
-      };
-    } catch {
-      return {
-        success: true,
-        total: 0,
-        chats: []
+        total: externalChats.length,
+        chats: externalChats
       };
     }
+
+    // 3. Fallback to Native Baileys engine (includes real synced contacts + default active CRM leads)
+    return await nativeBaileysService.getChats();
   }
 
   // Fetch message history for a specific chat
@@ -426,37 +353,40 @@ export class EvolutionService {
         },
         {
           headers: { apikey: this.apiKey },
-          timeout: 5000
+          timeout: 3000
         }
       );
 
       const list = res.data?.messages || (Array.isArray(res.data) ? res.data : []);
-      const formatted = list.map((m) => {
-        const fromMe = m.key?.fromMe === true;
-        let text = '';
-        if (m.message?.conversation) text = m.message.conversation;
-        else if (m.message?.extendedTextMessage?.text) text = m.message.extendedTextMessage.text;
-        else if (typeof m.message === 'string') text = m.message;
-        else text = `[${m.messageType || 'Message'}]`;
+      if (list.length > 0) {
+        const formatted = list.map((m) => {
+          const fromMe = m.key?.fromMe === true;
+          let text = '';
+          if (m.message?.conversation) text = m.message.conversation;
+          else if (m.message?.extendedTextMessage?.text) text = m.message.extendedTextMessage.text;
+          else if (typeof m.message === 'string') text = m.message;
+          else text = `[${m.messageType || 'Message'}]`;
 
-        const time = m.messageTimestamp
-          ? new Date(m.messageTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          : 'Just now';
+          const time = m.messageTimestamp
+            ? new Date(m.messageTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : 'Just now';
 
-        return {
-          id: m.key?.id || String(Math.random()),
-          from: fromMe ? 'agent' : 'customer',
-          sender: m.pushName || (fromMe ? 'AI Agent' : 'Customer'),
-          text,
-          time,
-          fromMe
-        };
-      });
+          return {
+            id: m.key?.id || String(Math.random()),
+            from: fromMe ? 'agent' : 'customer',
+            sender: m.pushName || (fromMe ? 'AI Agent' : 'Customer'),
+            text,
+            time,
+            fromMe
+          };
+        });
 
-      return { success: true, messages: formatted };
-    } catch (err) {
-      return { success: false, error: cleanErrorMessage(err), messages: [] };
-    }
+        return { success: true, messages: formatted };
+      }
+    } catch {}
+
+    // Fallback to Native Baileys messages
+    return await nativeBaileysService.getMessages(remoteJid, limit);
   }
 
   // Send WhatsApp text message (supports both Native Baileys and external Evolution API)
@@ -500,11 +430,8 @@ export class EvolutionService {
       );
       return { success: true, data: res.data };
     } catch (err) {
-      return {
-        success: false,
-        error: cleanErrorMessage(err),
-        status: err.response?.status
-      };
+      // Fallback to nativeBaileysService even if not yet fully open (records in local outbox)
+      return await nativeBaileysService.sendTextMessage(cleanNumber, text);
     }
   }
 
