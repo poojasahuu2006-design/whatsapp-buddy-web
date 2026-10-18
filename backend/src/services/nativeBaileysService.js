@@ -8,6 +8,12 @@ import pino from 'pino';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import {
+  extractMessageText,
+  resolveContactName,
+  resolveInitials,
+  isPhoneNumber
+} from './evolutionService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -165,20 +171,72 @@ export class NativeBaileysService {
         this.saveCachedContacts();
       });
 
-      this.sock.ev.on('messaging-history.set', ({ contacts, chats }) => {
+      this.sock.ev.on('messaging-history.set', ({ contacts, chats, messages }) => {
         if (Array.isArray(contacts)) {
           for (const c of contacts) {
-            if (c.id) this.contactsMap.set(c.id, c);
+            if (c.id) {
+              const prev = this.contactsMap.get(c.id) || {};
+              this.contactsMap.set(c.id, { ...prev, ...c });
+            }
           }
         }
         if (Array.isArray(chats)) {
           for (const ch of chats) {
-            if (ch.id) this.chatsMap.set(ch.id, ch);
+            if (ch.id) {
+              const prev = this.chatsMap.get(ch.id) || {};
+              this.chatsMap.set(ch.id, { ...prev, ...ch });
+            }
+          }
+        }
+        if (Array.isArray(messages)) {
+          for (const msg of messages) {
+            const remoteJid = msg.key?.remoteJid;
+            if (!remoteJid || remoteJid.includes('@broadcast') || remoteJid.includes('@lid')) continue;
+
+            const text = extractMessageText(msg);
+            const rawTime = msg.messageTimestamp;
+            const time = rawTime
+              ? (typeof rawTime === 'number' && rawTime < 1e12
+                  ? new Date(rawTime * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                  : new Date(rawTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+              : 'Recent';
+
+            // Enrich contact name from pushName if missing or phone
+            if (msg.pushName && !msg.key?.fromMe) {
+              const c = this.contactsMap.get(remoteJid) || { id: remoteJid };
+              if (!c.name || isPhoneNumber(c.name)) {
+                c.notify = msg.pushName;
+                this.contactsMap.set(remoteJid, c);
+              }
+            }
+
+            // Record in messagesMap
+            const list = this.messagesMap.get(remoteJid) || [];
+            list.push({
+              id: msg.key?.id || String(Date.now()),
+              from: msg.key?.fromMe ? 'agent' : 'customer',
+              sender: msg.pushName || (msg.key?.fromMe ? 'You' : 'Customer'),
+              text: text || 'Message',
+              time,
+              fromMe: !!msg.key?.fromMe,
+              timestamp: Number(rawTime) || Date.now()
+            });
+            this.messagesMap.set(remoteJid, list);
+
+            // Update chat's last message if text is present
+            if (text) {
+              const ch = this.chatsMap.get(remoteJid) || { id: remoteJid, remoteJid };
+              this.chatsMap.set(remoteJid, {
+                ...ch,
+                lastMessage: text,
+                timestamp: time
+              });
+            }
           }
         }
         this.syncToChatsMap();
         this.saveCachedContacts();
-        console.log(`[Native Baileys] Synced real history from phone: ${this.contactsMap.size} contacts, ${this.chatsMap.size} chats`);
+        console.log(`[Native Baileys] Synced real history: ${this.contactsMap.size} contacts, ${this.chatsMap.size} chats, ${this.messagesMap.size} message threads`);
       });
 
       // Listen to incoming messages for automated AI replies and message history
@@ -187,21 +245,17 @@ export class NativeBaileysService {
 
         for (const msg of m.messages) {
           const remoteJid = msg.key?.remoteJid || '';
-          if (!remoteJid || remoteJid.includes('@broadcast')) continue;
+          if (!remoteJid || remoteJid.includes('@broadcast') || remoteJid.includes('@lid')) continue;
 
           // Record in messagesMap
           const list = this.messagesMap.get(remoteJid) || [];
-          const text = msg.message?.conversation ||
-            msg.message?.extendedTextMessage?.text ||
-            (msg.message?.imageMessage ? '[Image]' : '') ||
-            (msg.message?.videoMessage ? '[Video]' : '') ||
-            '';
+          const text = extractMessageText(msg);
 
           const formattedMsg = {
             id: msg.key?.id || String(Date.now()),
             from: msg.key?.fromMe ? 'agent' : 'customer',
             sender: msg.pushName || (msg.key?.fromMe ? 'You' : 'Customer'),
-            text,
+            text: text || 'Message',
             time: 'Just now',
             fromMe: !!msg.key?.fromMe
           };
@@ -213,18 +267,29 @@ export class NativeBaileysService {
           const existing = this.chatsMap.get(remoteJid) || {};
           const isGroup = remoteJid.endsWith('@g.us');
           const cleanPhone = isGroup ? '' : remoteJid.replace('@s.whatsapp.net', '').replace(/[^0-9]/g, '');
-          const name = msg.pushName || existing.name || (cleanPhone ? `+${cleanPhone}` : 'WhatsApp Chat');
+          
+          if (msg.pushName && !msg.key?.fromMe) {
+            const c = this.contactsMap.get(remoteJid) || { id: remoteJid };
+            if (!c.name || isPhoneNumber(c.name)) {
+              c.notify = msg.pushName;
+              this.contactsMap.set(remoteJid, c);
+            }
+          }
+
+          const displayName = resolveContactName({ ...existing, pushName: msg.pushName }, cleanPhone, isGroup);
+          const initials = resolveInitials(displayName);
 
           this.chatsMap.set(remoteJid, {
             ...existing,
             id: remoteJid,
             remoteJid,
             phone: cleanPhone,
-            name,
-            lastMessage: text || existing.lastMessage || 'Recent message',
+            name: displayName,
+            initials,
+            lastMessage: text || existing.lastMessage || 'Tap to chat',
             timestamp: 'Just now',
             isGroup,
-            unread: msg.key?.fromMe ? 0 : 1
+            unread: msg.key?.fromMe ? 0 : (existing.unread || 0) + 1
           });
           this.saveCachedContacts();
 
@@ -255,21 +320,17 @@ export class NativeBaileysService {
     const colors = ['green', 'orange', 'purple', 'blue', 'pink', 'teal'];
     let idx = 0;
 
+    // 1. Process contacts
     for (const [id, c] of this.contactsMap.entries()) {
       if (!id || id.includes('@broadcast') || id.includes('@lid')) continue;
       const isGroup = id.endsWith('@g.us');
       const cleanPhone = isGroup ? '' : id.replace('@s.whatsapp.net', '').replace(/[^0-9]/g, '');
-      const displayName = c.name || c.notify || c.verifiedName || (cleanPhone ? `+${cleanPhone}` : 'Contact');
-      
-      const initials = (displayName || 'WA')
-        .split(' ')
-        .filter(Boolean)
-        .map((n) => n[0])
-        .slice(0, 2)
-        .join('')
-        .toUpperCase() || 'WA';
-
       const existing = this.chatsMap.get(id);
+
+      const merged = { ...c, ...(existing || {}) };
+      const displayName = resolveContactName(merged, cleanPhone, isGroup);
+      const initials = resolveInitials(displayName);
+
       this.chatsMap.set(id, {
         id,
         remoteJid: id,
@@ -279,9 +340,32 @@ export class NativeBaileysService {
         color: existing?.color || colors[idx % colors.length],
         isGroup,
         unread: existing?.unread || 0,
-        lastMessage: existing?.lastMessage || 'Synced from WhatsApp',
-        timestamp: existing?.timestamp || 'Synced',
-        profilePicUrl: c.imgUrl || null
+        lastMessage: existing?.lastMessage || 'Tap to chat',
+        timestamp: existing?.timestamp || 'Recent',
+        profilePicUrl: c.imgUrl || existing?.profilePicUrl || null
+      });
+      idx++;
+    }
+
+    // 2. Process groups or active chats that are in chatsMap but not in contactsMap
+    for (const [id, ch] of this.chatsMap.entries()) {
+      if (!id || id.includes('@broadcast') || id.includes('@lid')) continue;
+      const isGroup = id.endsWith('@g.us');
+      const cleanPhone = isGroup ? '' : id.replace('@s.whatsapp.net', '').replace(/[^0-9]/g, '');
+      const displayName = resolveContactName(ch, cleanPhone, isGroup);
+      const initials = resolveInitials(displayName);
+
+      this.chatsMap.set(id, {
+        ...ch,
+        id,
+        remoteJid: id,
+        phone: cleanPhone,
+        name: displayName,
+        initials,
+        color: ch.color || colors[idx % colors.length],
+        isGroup,
+        lastMessage: ch.lastMessage || 'Tap to chat',
+        timestamp: ch.timestamp || 'Recent'
       });
       idx++;
     }
@@ -338,6 +422,7 @@ export class NativeBaileysService {
 
   // Get active contacts & chats synced from real WhatsApp
   async getChats() {
+    this.syncToChatsMap();
     const syncedList = Array.from(this.chatsMap.values());
     const colors = ['green', 'orange', 'purple', 'blue', 'pink', 'teal'];
 
@@ -346,15 +431,8 @@ export class NativeBaileysService {
       .map((c, i) => {
         const isGroup = !!c.isGroup || (c.remoteJid && c.remoteJid.endsWith('@g.us'));
         const cleanPhone = isGroup ? '' : (c.phone || (c.remoteJid ? c.remoteJid.replace('@s.whatsapp.net', '').replace(/[^0-9]/g, '') : ''));
-        const name = c.name || (cleanPhone ? `+${cleanPhone}` : (isGroup ? 'WhatsApp Group' : 'Contact'));
-
-        const initials = (name || 'WA')
-          .split(' ')
-          .filter(Boolean)
-          .map((n) => n[0])
-          .slice(0, 2)
-          .join('')
-          .toUpperCase() || 'WA';
+        const name = resolveContactName(c, cleanPhone, isGroup);
+        const initials = resolveInitials(name);
 
         return {
           id: c.id || c.remoteJid,
@@ -365,7 +443,7 @@ export class NativeBaileysService {
           color: c.color || colors[i % colors.length],
           isGroup,
           unread: c.unread || 0,
-          lastMessage: c.lastMessage || 'Synced from WhatsApp',
+          lastMessage: c.lastMessage || 'Tap to chat',
           timestamp: c.timestamp || 'Recent',
           profilePicUrl: c.profilePicUrl || null
         };

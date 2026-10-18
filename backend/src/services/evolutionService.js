@@ -2,14 +2,157 @@ import axios from 'axios';
 import { config } from '../config/config.js';
 import { nativeBaileysService } from './nativeBaileysService.js';
 
-// Helper to clean and humanize error responses from Evolution API / CloudStation
+// Helper to check if a string is basically just a phone number
+export function isPhoneNumber(str) {
+  if (!str || typeof str !== 'string') return false;
+  const clean = str.trim();
+  return /^\+?[\d\s\-()]{6,}$/.test(clean);
+}
+
+// Helper to extract clean text from any WhatsApp message payload
+export function extractMessageText(lm) {
+  if (!lm) return '';
+  if (typeof lm === 'string') {
+    const trimmed = lm.trim();
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        return extractMessageText(JSON.parse(trimmed));
+      } catch {}
+    }
+    return trimmed;
+  }
+
+  let msgObj = lm;
+  if (lm.message) {
+    if (typeof lm.message === 'string') {
+      try {
+        msgObj = JSON.parse(lm.message);
+      } catch {
+        msgObj = lm.message;
+      }
+    } else {
+      msgObj = lm.message;
+    }
+  }
+
+  if (typeof msgObj === 'string') return msgObj.trim();
+
+  // Handle nested messages like ephemeralMessage or viewOnceMessage
+  if (msgObj.ephemeralMessage?.message) msgObj = msgObj.ephemeralMessage.message;
+  if (msgObj.viewOnceMessage?.message) msgObj = msgObj.viewOnceMessage.message;
+  if (msgObj.viewOnceMessageV2?.message) msgObj = msgObj.viewOnceMessageV2.message;
+
+  if (msgObj.conversation && typeof msgObj.conversation === 'string') {
+    return msgObj.conversation.trim();
+  }
+  if (msgObj.extendedTextMessage?.text && typeof msgObj.extendedTextMessage.text === 'string') {
+    return msgObj.extendedTextMessage.text.trim();
+  }
+  if (msgObj.imageMessage?.caption) return `📷 ${msgObj.imageMessage.caption.trim()}`;
+  if (msgObj.imageMessage) return '📷 Photo';
+  if (msgObj.videoMessage?.caption) return `🎥 ${msgObj.videoMessage.caption.trim()}`;
+  if (msgObj.videoMessage) return '🎥 Video';
+  if (msgObj.audioMessage) return '🎵 Voice message';
+  if (msgObj.documentMessage?.fileName) return `📄 ${msgObj.documentMessage.fileName}`;
+  if (msgObj.documentMessage) return '📄 Document';
+  if (msgObj.stickerMessage) return '✨ Sticker';
+  if (msgObj.contactMessage?.displayName) return `👤 ${msgObj.contactMessage.displayName}`;
+  if (msgObj.contactMessage) return '👤 Contact card';
+  if (msgObj.locationMessage) return '📍 Location';
+
+  if (msgObj.body && typeof msgObj.body === 'string') return msgObj.body.trim();
+  if (msgObj.text && typeof msgObj.text === 'string') return msgObj.text.trim();
+  if (msgObj.content && typeof msgObj.content === 'string') return msgObj.content.trim();
+  if (lm.body && typeof lm.body === 'string') return lm.body.trim();
+  if (lm.text && typeof lm.text === 'string') return lm.text.trim();
+  if (lm.content && typeof lm.content === 'string') return lm.content.trim();
+  if (lm.caption && typeof lm.caption === 'string') return lm.caption.trim();
+
+  return '';
+}
+
+// Helper to resolve the best real display name for a contact
+export function resolveContactName(c, phone, isGroup) {
+  if (!c) return phone ? `+${phone}` : 'WhatsApp Contact';
+
+  if (isGroup) {
+    const groupName = c.subject || c.name || c.displayName;
+    if (groupName && typeof groupName === 'string' && !groupName.endsWith('@g.us')) {
+      return groupName.trim();
+    }
+    return 'WhatsApp Group';
+  }
+
+  // Candidates in priority order
+  const candidates = [
+    c.notify,
+    c.pushName,
+    c.name,
+    c.verifiedName,
+    c.displayName,
+    c.shortName,
+    c.lastMessage?.pushName,
+    c.lastMessage?.message?.pushName
+  ];
+
+  // Pass 1: Prioritize real non-phone human names
+  for (const cand of candidates) {
+    if (cand && typeof cand === 'string') {
+      const trimmed = cand.trim();
+      if (
+        trimmed &&
+        !trimmed.endsWith('@s.whatsapp.net') &&
+        !trimmed.endsWith('@g.us') &&
+        !trimmed.endsWith('@lid') &&
+        !isPhoneNumber(trimmed)
+      ) {
+        return trimmed;
+      }
+    }
+  }
+
+  // Pass 2: Fallback to any defined name or phone
+  for (const cand of candidates) {
+    if (cand && typeof cand === 'string') {
+      const trimmed = cand.trim();
+      if (trimmed && !trimmed.endsWith('@s.whatsapp.net') && !trimmed.endsWith('@g.us')) {
+        return trimmed.startsWith('+') ? trimmed : (isPhoneNumber(trimmed) ? `+${trimmed.replace(/\D/g, '')}` : trimmed);
+      }
+    }
+  }
+
+  if (phone) {
+    const cleanDigits = String(phone).replace(/\D/g, '');
+    return cleanDigits ? `+${cleanDigits}` : 'WhatsApp Contact';
+  }
+
+  return 'WhatsApp Contact';
+}
+
+// Helper to generate initials (never '+' sign)
+export function resolveInitials(name) {
+  if (!name) return 'WA';
+  const trimmed = name.trim();
+  if (isPhoneNumber(trimmed)) {
+    const digits = trimmed.replace(/\D/g, '');
+    return digits ? digits.slice(-2) : 'WA';
+  }
+  const clean = trimmed.replace(/[^\w\s\u0600-\u06FF\u0900-\u097F]/gi, '').trim();
+  if (!clean) return 'WA';
+  const parts = clean.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return clean.slice(0, 2).toUpperCase();
+}
+
 function cleanErrorMessage(err) {
   if (!err) return 'Unknown error';
   const status = err.response?.status;
   const data = err.response?.data;
 
   if (status === 503) {
-    return 'CloudStation Evolution API container is sleeping or offline (503 Service Unavailable). Using embedded WhatsApp Baileys engine.';
+    return 'CloudStation Evolution API container is sleeping (503 Service Unavailable). Using embedded WhatsApp Baileys engine.';
   }
   if (status === 502) {
     return 'Bad Gateway (502). The Evolution API container is currently starting or unresponsive.';
@@ -50,7 +193,6 @@ export class EvolutionService {
     };
   }
 
-  // Simulation controls for testing/demo
   setSimulatedState(connected = true) {
     this.isSimulated = connected === true;
     this.simulatedConnected = connected === true;
@@ -62,7 +204,6 @@ export class EvolutionService {
     };
   }
 
-  // Create an instance in Evolution API
   async createInstance(instanceName = this.instance) {
     try {
       const res = await axios.post(
@@ -87,7 +228,6 @@ export class EvolutionService {
     }
   }
 
-  // Configure Evolution API webhook for real-time incoming messages
   async configureWebhook(instance = this.instance) {
     const targetInstance = instance || this.instance;
     try {
@@ -107,14 +247,12 @@ export class EvolutionService {
           timeout: 5000
         }
       );
-      console.log(`[EvolutionService] Webhook configured for ${targetInstance} -> http://host.docker.internal:5000/api/whatappbuddy`);
       return { success: true, data: res.data };
     } catch (err) {
       return { success: false, error: cleanErrorMessage(err) };
     }
   }
 
-  // Get instance connection state ('open', 'close', 'connecting')
   async getConnectionState(instance = this.instance) {
     if (this.isSimulated) {
       return {
@@ -125,7 +263,6 @@ export class EvolutionService {
       };
     }
 
-    // 1. Check Native Baileys state first
     const nativeState = nativeBaileysService.getConnectionState();
     if (nativeState.state === 'open') {
       return {
@@ -136,7 +273,6 @@ export class EvolutionService {
       };
     }
 
-    // 2. Check external Evolution API
     const targetInstance = instance || this.instance;
     try {
       const res = await axios.get(`${this.apiUrl}/instance/connectionState/${targetInstance}`, {
@@ -155,9 +291,7 @@ export class EvolutionService {
           number: cleanPhone
         };
       }
-    } catch {
-      // External API unavailable
-    }
+    } catch {}
 
     return {
       success: true,
@@ -167,7 +301,6 @@ export class EvolutionService {
     };
   }
 
-  // Fetch real QR code (base64 image, code, pairingCode)
   async getQrCode(instance = this.instance) {
     const targetInstance = instance || this.instance;
 
@@ -180,7 +313,6 @@ export class EvolutionService {
       };
     }
 
-    // Guard: If WhatsApp is already connected, NEVER request a new QR code as that resets the Baileys session!
     try {
       const currentState = await this.getConnectionState(targetInstance);
       if (currentState.state === 'open') {
@@ -194,13 +326,11 @@ export class EvolutionService {
       }
     } catch {}
 
-    // Cache QR code for 5 seconds to avoid flooding the socket
     const now = Date.now();
     if (this.cachedQr && (now - this.cachedQrTime) < 5000 && this.cachedQr.base64) {
       return this.cachedQr;
     }
 
-    // 1. Try external Evolution API if configured and reachable
     let externalFailed = false;
     try {
       const res = await axios.get(`${this.apiUrl}/instance/connect/${targetInstance}`, {
@@ -227,7 +357,6 @@ export class EvolutionService {
       externalFailed = true;
     }
 
-    // 2. Fallback to Native Baileys engine
     if (externalFailed) {
       try {
         const nativeQr = await nativeBaileysService.getQrCode();
@@ -249,28 +378,22 @@ export class EvolutionService {
     };
   }
 
-  // Fetch real chats and contacts (merges native Baileys and external Evolution API)
+  // Fetch real chats and contacts with accurate name and last-message resolution
   async getChats(instance = this.instance) {
     const targetInstance = instance || this.instance;
 
-    // 1. If in simulation mode
-    if (this.isSimulated && this.simulatedConnected) {
-      return await nativeBaileysService.getChats();
-    }
-
-    // 2. Try external Evolution API
     let externalChats = [];
     try {
       const [chatsRes, contactsRes] = await Promise.allSettled([
         axios.post(
           `${this.apiUrl}/chat/findChats/${targetInstance}`,
           {},
-          { headers: { apikey: this.apiKey }, timeout: 3000 }
+          { headers: { apikey: this.apiKey }, timeout: 3500 }
         ),
         axios.post(
           `${this.apiUrl}/chat/findContacts/${targetInstance}`,
           {},
-          { headers: { apikey: this.apiKey }, timeout: 3000 }
+          { headers: { apikey: this.apiKey }, timeout: 3500 }
         )
       ]);
 
@@ -279,20 +402,45 @@ export class EvolutionService {
 
       if (rawChats.length > 0 || rawContacts.length > 0) {
         const chatMap = new Map();
+        const contactInfoMap = new Map();
 
-        for (const c of rawChats) {
-          const jid = c.remoteJid || c.id || '';
-          if (jid && !jid.endsWith('@broadcast') && !jid.endsWith('@lid')) {
-            chatMap.set(jid, c);
-          }
-        }
-
+        // 1. Index all contacts by JID to store their real names and profile pics
         for (const c of rawContacts) {
           const jid = c.remoteJid || c.id || '';
           if (jid && !jid.endsWith('@broadcast') && !jid.endsWith('@lid')) {
-            if (!chatMap.has(jid)) {
-              chatMap.set(jid, c);
-            }
+            contactInfoMap.set(jid, c);
+          }
+        }
+
+        // 2. Process all chats and merge with contact info
+        for (const ch of rawChats) {
+          const jid = ch.remoteJid || ch.id || '';
+          if (jid && !jid.endsWith('@broadcast') && !jid.endsWith('@lid')) {
+            const matched = contactInfoMap.get(jid) || {};
+            // Intelligently merge: do not let a null/phone name overwrite a real human name
+            const bestName = (!isPhoneNumber(matched.name) && matched.name) ||
+                             (!isPhoneNumber(matched.pushName) && matched.pushName) ||
+                             (!isPhoneNumber(matched.notify) && matched.notify) ||
+                             (!isPhoneNumber(ch.name) && ch.name) ||
+                             (!isPhoneNumber(ch.pushName) && ch.pushName) ||
+                             matched.name || ch.name;
+
+            const merged = {
+              ...matched,
+              ...ch,
+              name: bestName,
+              pushName: matched.pushName || ch.pushName,
+              notify: matched.notify || ch.notify,
+              lastMessage: ch.lastMessage || matched.lastMessage
+            };
+            chatMap.set(jid, merged);
+          }
+        }
+
+        // 3. Include any address book contacts that don't have existing chat records
+        for (const [jid, c] of contactInfoMap.entries()) {
+          if (!chatMap.has(jid)) {
+            chatMap.set(jid, c);
           }
         }
 
@@ -301,15 +449,16 @@ export class EvolutionService {
           const jid = c.remoteJid || c.id || '';
           const isGroup = jid.endsWith('@g.us') || c.isGroup === true;
           const rawPhone = isGroup ? '' : jid.replace('@s.whatsapp.net', '').replace(/[^0-9]/g, '');
-          const displayName = c.pushName || c.name || c.verifiedName || (rawPhone ? `+${rawPhone}` : `Contact #${index + 1}`);
+          const displayName = resolveContactName(c, rawPhone, isGroup);
+          const initials = resolveInitials(displayName);
+          const lastMsgText = extractMessageText(c.lastMessage) || 'Tap to chat';
 
-          const initials = (displayName || 'WA')
-            .split(' ')
-            .filter(Boolean)
-            .map((n) => n[0])
-            .slice(0, 2)
-            .join('')
-            .toUpperCase() || 'WA';
+          const rawTime = c.updatedAt || c.conversationTimestamp || c.lastMessage?.messageTimestamp;
+          const timestamp = rawTime
+            ? (typeof rawTime === 'number' && rawTime < 1e12
+                ? new Date(rawTime * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : new Date(rawTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+            : 'Recent';
 
           return {
             id: c.id || jid,
@@ -320,10 +469,9 @@ export class EvolutionService {
             color: colors[index % colors.length],
             isGroup,
             unread: c.unreadCount || 0,
-            lastMessage: c.lastMessage?.message || c.lastMessage?.conversation || 'Synced from WhatsApp',
-            timestamp: c.updatedAt
-              ? new Date(c.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-              : 'Recent'
+            lastMessage: lastMsgText,
+            timestamp,
+            profilePicUrl: c.profilePicUrl || null
           };
         });
       }
@@ -337,11 +485,11 @@ export class EvolutionService {
       };
     }
 
-    // 3. Fallback to Native Baileys engine (includes real synced contacts + default active CRM leads)
+    // Fallback to Native Baileys real synced contacts
     return await nativeBaileysService.getChats();
   }
 
-  // Fetch message history for a specific chat
+  // Fetch real message history for a specific chat
   async getMessages(remoteJid, limit = 20, instance = this.instance) {
     const targetInstance = instance || this.instance;
     try {
@@ -357,25 +505,20 @@ export class EvolutionService {
         }
       );
 
-      const list = res.data?.messages || (Array.isArray(res.data) ? res.data : []);
+      const list = res.data?.messages?.records || res.data?.messages || (Array.isArray(res.data) ? res.data : []);
       if (list.length > 0) {
         const formatted = list.map((m) => {
           const fromMe = m.key?.fromMe === true;
-          let text = '';
-          if (m.message?.conversation) text = m.message.conversation;
-          else if (m.message?.extendedTextMessage?.text) text = m.message.extendedTextMessage.text;
-          else if (typeof m.message === 'string') text = m.message;
-          else text = `[${m.messageType || 'Message'}]`;
-
+          const text = extractMessageText(m);
           const time = m.messageTimestamp
-            ? new Date(m.messageTimestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            : 'Just now';
+            ? new Date(Number(m.messageTimestamp) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : 'Recent';
 
           return {
             id: m.key?.id || String(Math.random()),
             from: fromMe ? 'agent' : 'customer',
             sender: m.pushName || (fromMe ? 'AI Agent' : 'Customer'),
-            text,
+            text: text || 'Message',
             time,
             fromMe
           };
@@ -389,29 +532,16 @@ export class EvolutionService {
     return await nativeBaileysService.getMessages(remoteJid, limit);
   }
 
-  // Send WhatsApp text message (supports both Native Baileys and external Evolution API)
+  // Send WhatsApp text message
   async sendTextMessage(number, text, instance = this.instance) {
     const targetInstance = instance || this.instance;
     const cleanNumber = number.includes('@') ? number : number.replace(/[^0-9]/g, '');
 
-    if (this.isSimulated && this.simulatedConnected) {
-      return {
-        success: true,
-        data: {
-          key: { remoteJid: `${cleanNumber}@s.whatsapp.net`, fromMe: true },
-          message: { conversation: text }
-        },
-        isSimulated: true
-      };
-    }
-
-    // 1. If Native Baileys is connected, dispatch through native socket
     const nativeState = nativeBaileysService.getConnectionState();
     if (nativeState.state === 'open') {
       return await nativeBaileysService.sendTextMessage(cleanNumber, text);
     }
 
-    // 2. Otherwise dispatch through external Evolution API
     try {
       const url = `${this.apiUrl}/message/sendText/${targetInstance}`;
       const res = await axios.post(
@@ -430,26 +560,17 @@ export class EvolutionService {
       );
       return { success: true, data: res.data };
     } catch (err) {
-      // Fallback to nativeBaileysService even if not yet fully open (records in local outbox)
       return await nativeBaileysService.sendTextMessage(cleanNumber, text);
     }
   }
 
-  // Logout/Disconnect WhatsApp instance
   async logoutInstance(instance = this.instance) {
     const targetInstance = instance || this.instance;
     this.cachedQr = null;
     this.cachedQrTime = 0;
 
-    if (this.isSimulated) {
-      this.simulatedConnected = false;
-      return { success: true, data: { status: 'DISCONNECTED', instance: targetInstance } };
-    }
-
-    // Logout native Baileys
     await nativeBaileysService.logout().catch(() => {});
 
-    // Also attempt external logout if available
     try {
       const res = await axios.delete(`${this.apiUrl}/instance/logout/${targetInstance}`, {
         headers: { apikey: this.apiKey },
