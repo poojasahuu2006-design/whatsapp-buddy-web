@@ -18,12 +18,30 @@ function ProtectedRoute({ children }) {
   return <>{children}</>;
 }
 
+function RequireAuth({ children }) {
+  const { isAuthenticated } = useAuth();
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
 function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/onboarding" element={<OnboardingPage />} />
+      <Route
+        path="/onboarding"
+        element={
+          <RequireAuth>
+            <OnboardingPage />
+          </RequireAuth>
+        }
+      />
+      <Route path="/calendar" element={<Navigate to="/dashboard/calendar" replace />} />
+      <Route path="/personas" element={<Navigate to="/dashboard/personas" replace />} />
+      <Route path="/automations" element={<Navigate to="/dashboard/automations" replace />} />
+      <Route path="/settings" element={<Navigate to="/dashboard/settings" replace />} />
+      <Route path="/billing" element={<Navigate to="/dashboard/billing" replace />} />
       <Route
         path="/dashboard"
         element={
