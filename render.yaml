@@ -11,7 +11,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: EVOLUTION_API_URL
-        value: https://whatsapp-buddy-pooja.loca.lt
+        value: https://11d14be2e99538ae-152-58-31-77.serveousercontent.com
       - key: EVOLUTION_API_KEY
         value: 61C1EB49-2704-4D2C-B24B-A63A6F659F07
       - key: EVOLUTION_INSTANCE
