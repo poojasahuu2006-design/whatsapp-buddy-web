@@ -326,6 +326,8 @@ export default function DashboardHome() {
     return true;
   });
 
+  const directContactsCount = contacts.filter((c) => !c.isGroup).length;
+  const groupsCount = contacts.filter((c) => c.isGroup).length;
   const isLinked = connectionStatus === 'open';
 
   return (
