@@ -14,7 +14,9 @@ router.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     serverTime: new Date().toISOString(),
-    framework: 'Node.js & Express'
+    framework: 'Node.js & Express',
+    evolutionApiUrl: process.env.EVOLUTION_API_URL || 'not-set-in-env',
+    effectiveApiUrl: config.evolutionApiUrl
   });
 });
 
