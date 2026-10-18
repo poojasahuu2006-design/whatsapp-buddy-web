@@ -49,8 +49,8 @@ export class AiAgentService {
         detail: `Scheduled event: "${scheduledEvent.summary}" for ${scheduleResult.displayTime} (${this.timezone}) at ${this.calendarEmail}`
       });
 
-      // Strict single sentence confirmation with exact scheduled time and host
-      responseText = scheduleResult.confirmationSentence;
+      // Confirmation sentence with 1-click Google Calendar add link
+      responseText = `${scheduleResult.confirmationSentence}\n\n📅 Add to Google Calendar: ${scheduleResult.googleCalendarUrl}`;
     } else if (isKbQuery) {
       toolUsed = 'Get row(s) in sheet in Google Sheets';
       steps.push({

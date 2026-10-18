@@ -22,3 +22,4 @@ dist-ssr
 *.sw?
 .env
 cloudflared.exe
+baileys_auth_info

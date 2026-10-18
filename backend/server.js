@@ -1,6 +1,8 @@
 import app from './src/app.js';
 import { config } from './src/config/config.js';
 import { evolutionService } from './src/services/evolutionService.js';
+import { nativeBaileysService } from './src/services/nativeBaileysService.js';
+import { processIncomingMessage } from './src/controllers/webhookController.js';
 import { connectDB } from './src/config/db.js';
 
 const PORT = process.env.PORT || config.port || 5000;
@@ -17,7 +19,15 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
   // Connect to MongoDB Atlas
   await connectDB();
 
-  // Auto-register webhook with Evolution API
+  // Initialize Native Baileys WhatsApp Engine & AI webhook handler
+  try {
+    nativeBaileysService.setWebhookHandler(processIncomingMessage);
+    await nativeBaileysService.start();
+  } catch (err) {
+    console.warn('[Startup] Native Baileys initialization deferred:', err.message);
+  }
+
+  // Auto-register webhook with external Evolution API (if present)
   try {
     await evolutionService.configureWebhook();
   } catch (err) {

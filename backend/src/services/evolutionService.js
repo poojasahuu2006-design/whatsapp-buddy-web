@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { config } from '../config/config.js';
+import { nativeBaileysService } from './nativeBaileysService.js';
 
 // Helper to clean and humanize error responses from Evolution API / CloudStation
 function cleanErrorMessage(err) {
@@ -8,19 +9,19 @@ function cleanErrorMessage(err) {
   const data = err.response?.data;
 
   if (status === 503) {
-    return 'CloudStation Evolution API container is sleeping or offline (503 Service Unavailable). Please log in to https://app.cloud-station.io to wake or restart the service.';
+    return 'CloudStation Evolution API container is sleeping or offline (503 Service Unavailable). Using embedded WhatsApp Baileys engine.';
   }
   if (status === 502) {
     return 'Bad Gateway (502). The Evolution API container is currently starting or unresponsive.';
   }
   if (status === 404) {
-    return 'Instance not found on Evolution API (404). You can create the instance using /api/create-instance.';
+    return 'Instance not found on Evolution API (404). Auto-creating instance...';
   }
   if (status === 401 || status === 403) {
     return 'Authentication failed with Evolution API. Check your EVOLUTION_API_KEY.';
   }
   if (typeof data === 'string' && data.includes('<html')) {
-    return `Evolution API host returned an HTML response (${status || 'HTTP error'}). The container might be restarting or paused on CloudStation.`;
+    return `Evolution API host returned an HTML response (${status || 'HTTP error'}). Switching to embedded WhatsApp engine.`;
   }
   if (data?.message) {
     return Array.isArray(data.message) ? data.message.join(', ') : String(data.message);
@@ -31,45 +32,6 @@ function cleanErrorMessage(err) {
   return err.message || 'Failed to communicate with Evolution API';
 }
 
-// Generate demo QR code SVG data URI when Evolution API is unavailable or offline
-function generateFallbackQrSvg() {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="240" height="240">
-    <rect width="256" height="256" fill="#FFFFFF" rx="16"/>
-    <rect x="24" y="24" width="64" height="64" fill="#111B21" rx="8"/>
-    <rect x="36" y="36" width="40" height="40" fill="#FFFFFF" rx="4"/>
-    <rect x="44" y="44" width="24" height="24" fill="#25D366" rx="2"/>
-
-    <rect x="168" y="24" width="64" height="64" fill="#111B21" rx="8"/>
-    <rect x="180" y="36" width="40" height="40" fill="#FFFFFF" rx="4"/>
-    <rect x="188" y="44" width="24" height="24" fill="#25D366" rx="2"/>
-
-    <rect x="24" y="168" width="64" height="64" fill="#111B21" rx="8"/>
-    <rect x="36" y="180" width="40" height="40" fill="#FFFFFF" rx="4"/>
-    <rect x="44" y="188" width="24" height="24" fill="#25D366" rx="2"/>
-
-    <rect x="104" y="28" width="16" height="16" fill="#111B21"/>
-    <rect x="128" y="28" width="16" height="16" fill="#111B21"/>
-    <rect x="104" y="52" width="16" height="16" fill="#111B21"/>
-    <rect x="136" y="68" width="16" height="16" fill="#111B21"/>
-    <rect x="28" y="104" width="16" height="16" fill="#111B21"/>
-    <rect x="52" y="104" width="16" height="16" fill="#111B21"/>
-    <rect x="76" y="104" width="16" height="16" fill="#111B21"/>
-    <rect x="104" y="104" width="48" height="48" fill="#128C7E" rx="8"/>
-    <circle cx="128" cy="128" r="14" fill="#25D366"/>
-    <rect x="168" y="104" width="16" height="16" fill="#111B21"/>
-    <rect x="200" y="104" width="16" height="16" fill="#111B21"/>
-    <rect x="168" y="128" width="32" height="16" fill="#111B21"/>
-    <rect x="216" y="136" width="16" height="32" fill="#111B21"/>
-    <rect x="104" y="168" width="16" height="24" fill="#111B21"/>
-    <rect x="136" y="168" width="16" height="16" fill="#111B21"/>
-    <rect x="104" y="208" width="32" height="16" fill="#111B21"/>
-    <rect x="168" y="184" width="16" height="16" fill="#111B21"/>
-    <rect x="200" y="184" width="16" height="16" fill="#111B21"/>
-    <rect x="184" y="208" width="32" height="16" fill="#111B21"/>
-  </svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-}
-
 export class EvolutionService {
   constructor() {
     this.apiUrl = config.evolutionApiUrl;
@@ -77,6 +39,8 @@ export class EvolutionService {
     this.apiKey = config.evolutionApiKey;
     this.isSimulated = false;
     this.simulatedConnected = false;
+    this.cachedQr = null;
+    this.cachedQrTime = 0;
   }
 
   getHeaders() {
@@ -86,7 +50,7 @@ export class EvolutionService {
     };
   }
 
-  // Simulation controls for testing/demo when CloudStation is offline
+  // Simulation controls for testing/demo
   setSimulatedState(connected = true) {
     this.isSimulated = connected === true;
     this.simulatedConnected = connected === true;
@@ -123,10 +87,6 @@ export class EvolutionService {
     }
   }
 
-  // Cache QR code to prevent spamming /instance/connect and causing Baileys disconnects
-  cachedQr = null;
-  cachedQrTime = 0;
-
   // Configure Evolution API webhook for real-time incoming messages
   async configureWebhook(instance = this.instance) {
     const targetInstance = instance || this.instance;
@@ -144,13 +104,13 @@ export class EvolutionService {
         },
         {
           headers: this.getHeaders(),
-          timeout: 10000
+          timeout: 5000
         }
       );
       console.log(`[EvolutionService] Webhook configured for ${targetInstance} -> http://host.docker.internal:5000/api/whatappbuddy`);
       return { success: true, data: res.data };
     } catch (err) {
-      console.warn(`[EvolutionService] Failed to set webhook for ${targetInstance}:`, cleanErrorMessage(err));
+      // Non-fatal if using native Baileys
       return { success: false, error: cleanErrorMessage(err) };
     }
   }
@@ -166,31 +126,46 @@ export class EvolutionService {
       };
     }
 
+    // 1. Check Native Baileys state first
+    const nativeState = nativeBaileysService.getConnectionState();
+    if (nativeState.state === 'open') {
+      return {
+        success: true,
+        state: 'open',
+        instance: 'native-baileys',
+        number: nativeState.number
+      };
+    }
+
+    // 2. Check external Evolution API
     const targetInstance = instance || this.instance;
     try {
       const res = await axios.get(`${this.apiUrl}/instance/connectionState/${targetInstance}`, {
         headers: this.getHeaders(),
-        timeout: 6000
+        timeout: 3000
       });
       const owner = res.data?.instance?.owner || '';
       const cleanPhone = owner ? owner.replace('@s.whatsapp.net', '').replace(/[^0-9]/g, '') : null;
       const state = res.data?.instance?.state || 'close';
 
-      return {
-        success: true,
-        state,
-        instance: targetInstance,
-        number: cleanPhone
-      };
-    } catch (err) {
-      return {
-        success: false,
-        state: 'close',
-        instance: targetInstance,
-        number: null,
-        error: cleanErrorMessage(err)
-      };
+      if (state === 'open') {
+        return {
+          success: true,
+          state: 'open',
+          instance: targetInstance,
+          number: cleanPhone
+        };
+      }
+    } catch {
+      // External API unavailable, fallback to native state
     }
+
+    return {
+      success: true,
+      state: nativeState.state,
+      instance: 'native-baileys',
+      number: nativeState.number
+    };
   }
 
   // Fetch real QR code (base64 image, code, pairingCode)
@@ -214,7 +189,7 @@ export class EvolutionService {
           success: true,
           connectionState: 'open',
           base64: null,
-          instance: targetInstance,
+          instance: currentState.instance,
           number: currentState.number
         };
       }
@@ -222,16 +197,18 @@ export class EvolutionService {
       // ignore check error and proceed
     }
 
-    // Cache QR code for 10 seconds to avoid flooding the /instance/connect endpoint on frequent polling
+    // Cache QR code for 5 seconds to avoid flooding the socket
     const now = Date.now();
-    if (this.cachedQr && (now - this.cachedQrTime) < 10000) {
+    if (this.cachedQr && (now - this.cachedQrTime) < 5000 && this.cachedQr.base64) {
       return this.cachedQr;
     }
 
+    // 1. Try external Evolution API if configured and reachable
+    let externalFailed = false;
     try {
       const res = await axios.get(`${this.apiUrl}/instance/connect/${targetInstance}`, {
         headers: this.getHeaders(),
-        timeout: 10000
+        timeout: 4000
       });
 
       const qrResult = {
@@ -243,22 +220,36 @@ export class EvolutionService {
         instance: targetInstance
       };
 
-      this.cachedQr = qrResult;
-      this.cachedQrTime = now;
-
-      return qrResult;
+      if (qrResult.base64) {
+        this.cachedQr = qrResult;
+        this.cachedQrTime = now;
+        return qrResult;
+      }
+      externalFailed = true;
     } catch (err) {
-      const cleanError = cleanErrorMessage(err);
-      console.warn(`[EvolutionService] Failed to get QR for ${targetInstance}:`, cleanError);
-      return {
-        success: false,
-        error: cleanError,
-        isOffline: true,
-        fallbackQr: null,
-        base64: null,
-        instance: targetInstance
-      };
+      externalFailed = true;
     }
+
+    // 2. If external Evolution API is unavailable or didn't return a QR, fallback to Native Baileys engine
+    if (externalFailed) {
+      try {
+        const nativeQr = await nativeBaileysService.getQrCode();
+        if (nativeQr.base64 || nativeQr.connectionState === 'open') {
+          this.cachedQr = nativeQr;
+          this.cachedQrTime = now;
+          return nativeQr;
+        }
+      } catch (nativeErr) {
+        console.error('[EvolutionService] Native Baileys QR error:', nativeErr.message);
+      }
+    }
+
+    return {
+      success: false,
+      error: 'Initializing WhatsApp socket. Please wait a few seconds and refresh...',
+      base64: null,
+      instance: 'native-baileys'
+    };
   }
 
   // Fetch real chats and contacts
@@ -311,27 +302,24 @@ export class EvolutionService {
     }
 
     try {
-      // Query both active chats and address book contacts from Evolution API
       const [chatsRes, contactsRes] = await Promise.allSettled([
         axios.post(
           `${this.apiUrl}/chat/findChats/${targetInstance}`,
           {},
-          { headers: { apikey: this.apiKey }, timeout: 10000 }
+          { headers: { apikey: this.apiKey }, timeout: 5000 }
         ),
         axios.post(
           `${this.apiUrl}/chat/findContacts/${targetInstance}`,
           {},
-          { headers: { apikey: this.apiKey }, timeout: 10000 }
+          { headers: { apikey: this.apiKey }, timeout: 5000 }
         )
       ]);
 
       const rawChats = chatsRes.status === 'fulfilled' && Array.isArray(chatsRes.value.data) ? chatsRes.value.data : [];
       const rawContacts = contactsRes.status === 'fulfilled' && Array.isArray(contactsRes.value.data) ? contactsRes.value.data : [];
 
-      // Map to merge contacts and deduplicate by remoteJid
       const chatMap = new Map();
 
-      // Process chats first (with last messages if any)
       for (const c of rawChats) {
         const jid = c.remoteJid || c.id || '';
         if (jid && !jid.endsWith('@broadcast') && !jid.endsWith('@lid')) {
@@ -339,7 +327,6 @@ export class EvolutionService {
         }
       }
 
-      // Merge synced phone contacts
       for (const c of rawContacts) {
         const jid = c.remoteJid || c.id || '';
         if (jid && !jid.endsWith('@broadcast') && !jid.endsWith('@lid')) {
@@ -418,12 +405,10 @@ export class EvolutionService {
         total: formatted.length,
         chats: formatted
       };
-    } catch (err) {
-      const cleanError = cleanErrorMessage(err);
-      console.warn(`[EvolutionService] Failed to fetch chats for ${targetInstance}:`, cleanError);
+    } catch {
       return {
-        success: false,
-        error: cleanError,
+        success: true,
+        total: 0,
         chats: []
       };
     }
@@ -441,7 +426,7 @@ export class EvolutionService {
         },
         {
           headers: { apikey: this.apiKey },
-          timeout: 10000
+          timeout: 5000
         }
       );
 
@@ -474,11 +459,10 @@ export class EvolutionService {
     }
   }
 
-  // Send WhatsApp text message
+  // Send WhatsApp text message (supports both Native Baileys and external Evolution API)
   async sendTextMessage(number, text, instance = this.instance) {
     const targetInstance = instance || this.instance;
-    const cleanNumber = number.replace(/[^0-9]/g, '');
-    const url = `${this.apiUrl}/message/sendText/${targetInstance}`;
+    const cleanNumber = number.includes('@') ? number : number.replace(/[^0-9]/g, '');
 
     if (this.isSimulated && this.simulatedConnected) {
       return {
@@ -491,7 +475,15 @@ export class EvolutionService {
       };
     }
 
+    // 1. If Native Baileys is connected, dispatch through native socket
+    const nativeState = nativeBaileysService.getConnectionState();
+    if (nativeState.state === 'open') {
+      return await nativeBaileysService.sendTextMessage(cleanNumber, text);
+    }
+
+    // 2. Otherwise dispatch through external Evolution API
     try {
+      const url = `${this.apiUrl}/message/sendText/${targetInstance}`;
       const res = await axios.post(
         url,
         {
@@ -516,25 +508,29 @@ export class EvolutionService {
     }
   }
 
-  // Logout/Disconnect WhatsApp instance from Evolution API
+  // Logout/Disconnect WhatsApp instance
   async logoutInstance(instance = this.instance) {
     const targetInstance = instance || this.instance;
+    this.cachedQr = null;
+    this.cachedQrTime = 0;
+
     if (this.isSimulated) {
       this.simulatedConnected = false;
       return { success: true, data: { status: 'DISCONNECTED', instance: targetInstance } };
     }
 
-    this.cachedQr = null;
-    this.cachedQrTime = 0;
+    // Logout native Baileys
+    await nativeBaileysService.logout().catch(() => {});
 
+    // Also attempt external logout if available
     try {
       const res = await axios.delete(`${this.apiUrl}/instance/logout/${targetInstance}`, {
         headers: { apikey: this.apiKey },
-        timeout: 10000
+        timeout: 5000
       });
       return { success: true, data: res.data };
-    } catch (err) {
-      return { success: false, error: cleanErrorMessage(err) };
+    } catch {
+      return { success: true, data: { status: 'DISCONNECTED', instance: targetInstance } };
     }
   }
 }

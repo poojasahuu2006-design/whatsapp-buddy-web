@@ -84,11 +84,11 @@ export class CalendarService {
       dayOffset = 1;
     }
 
-    const timeMatch = lower.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+    const timeMatch = lower.match(/(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?/i);
     if (timeMatch) {
       let h = parseInt(timeMatch[1], 10);
       const m = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
-      const meridiem = timeMatch[3] ? timeMatch[3].toLowerCase() : null;
+      const meridiem = timeMatch[3] ? timeMatch[3].toLowerCase().replace(/\./g, '') : null;
 
       if (meridiem === 'pm' && h < 12) h += 12;
       if (meridiem === 'am' && h === 12) h = 0;
