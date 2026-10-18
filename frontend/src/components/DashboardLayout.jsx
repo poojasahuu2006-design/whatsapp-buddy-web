@@ -139,22 +139,15 @@ export default function DashboardLayout({ children }) {
             <Menu className="h-5 w-5" />
           </button>
 
-          {/* Connected number + status */}
+          {/* Connected status */}
           <div className="flex items-center gap-3">
             {isWhatsAppConnected ? (
-              <>
-                <div className="hidden items-center gap-2 rounded-full bg-whatsapp-50 px-3 py-1.5 sm:flex border border-whatsapp-200">
-                  <span className="flex h-2 w-2 rounded-full bg-whatsapp-500">
-                    <span className="h-full w-full animate-ping rounded-full bg-whatsapp-500 opacity-75" />
-                  </span>
-                  <span className="text-xs font-bold text-whatsapp-700">Connected</span>
-                </div>
-                {connectedNumber && (
-                  <span className="hidden text-sm font-medium text-ink-600 md:block">
-                    {connectedNumber}
-                  </span>
-                )}
-              </>
+              <div className="hidden items-center gap-2 rounded-full bg-whatsapp-50 px-3 py-1.5 sm:flex border border-whatsapp-200">
+                <span className="flex h-2 w-2 rounded-full bg-whatsapp-500">
+                  <span className="h-full w-full animate-ping rounded-full bg-whatsapp-500 opacity-75" />
+                </span>
+                <span className="text-xs font-bold text-whatsapp-700">Connected</span>
+              </div>
             ) : (
               <div className="hidden items-center gap-2 rounded-full bg-amber-50 px-3 py-1.5 sm:flex border border-amber-200">
                 <span className="h-2 w-2 rounded-full bg-amber-500" />
