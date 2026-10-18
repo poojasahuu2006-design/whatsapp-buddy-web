@@ -243,23 +243,6 @@ export default function CalendarPage() {
         )}
       </AnimatePresence>
 
-      {/* Info Card: Calendar Issue Resolution */}
-      <Card className="border border-cream-300 bg-cream-50/70 p-5">
-        <div className="flex items-start gap-3">
-          <CalendarIcon className="h-5 w-5 text-whatsapp-600 flex-shrink-0 mt-0.5" />
-          <div className="space-y-1 text-xs">
-            <h3 className="font-bold text-ink-900">
-              Why was there an error previously in Google Calendar?
-            </h3>
-            <p className="text-ink-600 leading-relaxed">
-              In n8n, the AI agent often passed loose relative text (e.g. <em>"tomorrow at 4:00 PM"</em>) into the Google Calendar node's <code>Start</code> field, which caused Google Calendar API to fail with an invalid date/time format error.
-            </p>
-            <p className="text-whatsapp-800 font-semibold pt-1">
-              ✅ <strong>Solved:</strong> Our Node.js Express calendar service parses all natural language dates (e.g. "tomorrow at 4pm", "today at 5:30pm") into exact ISO 8601 timestamps in <strong>Asia/Kolkata (IST)</strong> timezone, adds 30 minutes duration, creates a direct 1-click Google Calendar add link, and responds in 1 sentence.
-            </p>
-          </div>
-        </div>
-      </Card>
 
       {/* Events List */}
       <div>
