@@ -12,6 +12,10 @@ services:
         value: production
       - key: EVOLUTION_API_URL
         value: https://whatsapp-buddy-pooja.loca.lt
+      - key: EVOLUTION_API_KEY
+        value: 61C1EB49-2704-4D2C-B24B-A63A6F659F07
+      - key: EVOLUTION_INSTANCE
+        value: cs-cst-evolution-api-da141464
       - key: MONGODB_URI
         value: mongodb+srv://poojasahuu2006_db_user:Pooja2006@cluster0.kpjsxdz.mongodb.net/whatsapp_buddy?retryWrites=true&w=majority
       - key: CALENDAR_EMAIL
