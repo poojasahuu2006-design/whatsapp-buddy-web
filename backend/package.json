@@ -5,7 +5,7 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "build": "node -e 'console.log(\"Backend build ready\")'",
+    "build": "echo Backend build ready",
     "start": "node server.js",
     "dev": "node server.js"
   },
