@@ -17,7 +17,7 @@ services:
       - key: EVOLUTION_INSTANCE
         value: cs-cst-evolution-api-da141464
       - key: MONGODB_URI
-        value: mongodb+srv://poojasahuu2006_db_user:Pooja2006@cluster0.kpjsxdz.mongodb.net/whatsapp_buddy?retryWrites=true&w=majority
+        sync: false
       - key: CALENDAR_EMAIL
         value: poojasahuu2006@gmail.com
       - key: TIMEZONE
