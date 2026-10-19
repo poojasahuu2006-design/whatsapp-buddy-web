@@ -37,6 +37,7 @@ export default function DashboardHome() {
   const [dashboardQr, setDashboardQr] = useState(null);
   const [qrLoading, setQrLoading] = useState(false);
   const [qrTimer, setQrTimer] = useState(25);
+  const [qrModalOpen, setQrModalOpen] = useState(false);
 
   // Selected chat for conversation drawer/modal
   const [selectedContact, setSelectedContact] = useState(null);
@@ -80,63 +81,57 @@ export default function DashboardHome() {
         setConnectionStatus(currentState);
       }
 
-      if (currentState === 'open') {
-        // Parallel fetch for stats and contacts
-        const [statsRes, contactsRes] = await Promise.allSettled([
-          fetch('/api/stats'),
-          fetch('/api/contacts')
-        ]);
-
-        if (statsRes.status === 'fulfilled' && statsRes.value.ok) {
-          const sData = await statsRes.value.json();
-          setRealStats({
-            messagesToday: sData.messagesToday || 0,
-            activeConversations: sData.activeConversations || 0,
-            totalContacts: sData.totalContacts || 0,
-            directContacts: sData.directContacts || 0,
-            groups: sData.groups || 0,
-            activeWithMessages: sData.activeWithMessages || 0,
-            unreadChats: sData.unreadChats || 0,
-            avgResponseTime: sData.avgResponseTime || '0.9s',
-            uptime: sData.uptime || '100%',
-            contactsSparkline: sData.contactsSparkline,
-            messagesSparkline: sData.messagesSparkline
-          });
-        }
-
-        if (contactsRes.status === 'fulfilled' && contactsRes.value.ok) {
-          const cData = await contactsRes.value.json();
-          if (Array.isArray(cData.chats)) {
-            setContacts(cData.chats);
-          }
-        }
-
-        // If a contact conversation is actively open, smoothly refresh messages in background
-        if (selectedContact?.remoteJid) {
-          try {
-            const mRes = await fetch(`/api/chats/${encodeURIComponent(selectedContact.remoteJid)}/messages`);
-            if (mRes.ok) {
-              const mData = await mRes.json();
-              if (mData.messages && mData.messages.length > 0) {
-                setMessages(mData.messages);
-              }
-            }
-          } catch {}
-        }
-
-        setLastSyncTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-      } else {
-        // Disconnected: clear contacts and request new live QR
-        setContacts([]);
-        fetchDashboardQr();
+      // Automatically close QR modal if connected
+      if (currentState === 'open' && qrModalOpen) {
+        setQrModalOpen(false);
       }
+
+      // Always fetch stats and contacts regardless of connection state (contacts are preserved)
+      const [statsRes, contactsRes] = await Promise.allSettled([
+        fetch('/api/stats'),
+        fetch('/api/contacts')
+      ]);
+
+      if (statsRes.status === 'fulfilled' && statsRes.value.ok) {
+        const sData = await statsRes.value.json();
+        setRealStats({
+          messagesToday: sData.messagesToday || 0,
+          activeConversations: sData.activeConversations || 0,
+          totalContacts: sData.totalContacts || 0,
+          directContacts: sData.directContacts || 0,
+          groups: sData.groups || 0,
+          activeWithMessages: sData.activeWithMessages || 0,
+          unreadChats: sData.unreadChats || 0,
+          avgResponseTime: sData.avgResponseTime || '0.9s',
+          uptime: sData.uptime || '100%',
+          contactsSparkline: sData.contactsSparkline,
+          messagesSparkline: sData.messagesSparkline
+        });
+      }
+
+      if (contactsRes.status === 'fulfilled' && contactsRes.value.ok) {
+        const cData = await contactsRes.value.json();
+        if (Array.isArray(cData.chats) && cData.chats.length > 0) {
+          setContacts(cData.chats);
+        }
+      }
+
+      // If a contact conversation is actively open, smoothly refresh messages in background
+      if (selectedContact?.remoteJid) {
+        try {
+          const mRes = await fetch(`/api/chats/${encodeURIComponent(selectedContact.remoteJid)}/messages`);
+          if (mRes.ok) {
+            const mData = await mRes.json();
+            if (mData.messages && mData.messages.length > 0) {
+              setMessages(mData.messages);
+            }
+          }
+        } catch {}
+      }
+
+      setLastSyncTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     } catch (err) {
       console.error('Real-time sync error:', err);
-      if (isInitial) {
-        setConnectionStatus('close');
-        setContacts([]);
-        fetchDashboardQr();
-      }
     } finally {
       if (isInitial) {
         setLoadingContacts(false);
@@ -146,7 +141,7 @@ export default function DashboardHome() {
     }
   };
 
-  // Fetch live QR code for linking
+  // Fetch live QR code for linking (only when user opens QR modal or clicks refresh)
   const fetchDashboardQr = async () => {
     setQrLoading(true);
     try {
@@ -155,6 +150,7 @@ export default function DashboardHome() {
         const data = await res.json();
         if (data.connectionState === 'open') {
           setConnectionStatus('open');
+          setQrModalOpen(false);
           fetchDashboardData(false);
         } else if (data.base64) {
           setDashboardQr(data.base64);
@@ -167,6 +163,7 @@ export default function DashboardHome() {
       setQrLoading(false);
     }
   };
+
 
   // Initial load
   useEffect(() => {
@@ -424,9 +421,9 @@ export default function DashboardHome() {
             )}
           </div>
           <p className="mt-1 text-sm text-ink-500">
-            {isLinked
+            {totalContactsCount > 0
               ? `Real-time synchronization active for ${totalContactsCount.toLocaleString()} WhatsApp contacts & conversations.`
-              : 'Please scan the live QR code below with your WhatsApp app (Linked Devices) to connect.'}
+              : 'Real-time dashboard for WhatsApp AI conversations, contacts, and lead management.'}
           </p>
         </div>
 
@@ -443,13 +440,27 @@ export default function DashboardHome() {
               </Button>
             </>
           ) : (
-            <Button size="sm" variant="outline" onClick={fetchDashboardQr}>
-              <RefreshCw className={`h-4 w-4 ${qrLoading ? 'animate-spin' : ''}`} />
-              Refresh QR Code
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => {
+                  setQrModalOpen(true);
+                  fetchDashboardQr();
+                }}
+                className="gap-1.5 bg-whatsapp-600 text-white hover:bg-whatsapp-700 font-bold"
+              >
+                <QrCode className="h-4 w-4" />
+                Link WhatsApp (Scan QR)
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => fetchDashboardData(true)}>
+                <RefreshCw className={`h-4 w-4 ${loadingContacts || isRefreshing ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
           )}
         </div>
       </div>
+
 
       {/* Stats Cards with 100% Real-time Dynamic Metrics derived from real contacts */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -533,120 +544,14 @@ export default function DashboardHome() {
         ))}
       </div>
 
-      {/* CONDITIONAL CONTENT: IF WHATSAPP NOT LINKED -> ALWAYS SHOW LIVE QR CODE SCANNER */}
-      {connectionStatus !== 'open' ? (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-        >
-          <Card className="p-8 border-2 border-dashed border-whatsapp-300 bg-white shadow-md text-center">
-            <div className="mx-auto max-w-md">
-              <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-whatsapp-100 text-whatsapp-700 mb-3">
-                <QrCode className="h-6 w-6" />
-              </span>
-              <h2 className="font-serif text-2xl font-bold text-ink-900">
-                Scan QR to Link WhatsApp
-              </h2>
-              <p className="mt-1 text-xs text-ink-500">
-                Contacts and messages will appear here once you link your WhatsApp using the QR code below.
-              </p>
+      {/* WhatsApp Contacts & Active Conversations Table - Always Rendered */}
+      <div>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-serif text-xl font-bold text-ink-900">
+              WhatsApp Contacts & Active Chats
+            </h2>
 
-              {/* QR Code Frame */}
-              <div className="my-6 flex justify-center">
-                <div
-                  className="relative flex items-center justify-center rounded-2xl border-2 border-whatsapp-400 bg-white p-4 shadow-lg"
-                  style={{ minHeight: '260px', minWidth: '260px' }}
-                >
-                  {qrLoading ? (
-                    <div className="flex flex-col items-center gap-3 py-10">
-                      <Loader2 className="h-8 w-8 animate-spin text-whatsapp-500" />
-                      <span className="text-xs text-ink-500 font-medium">Fetching QR from Evolution API...</span>
-                    </div>
-                  ) : dashboardQr ? (
-                    <img
-                      src={dashboardQr}
-                      alt="Evolution API WhatsApp QR"
-                      className="h-56 w-56 rounded-lg object-contain"
-                    />
-                  ) : (
-                    <div className="flex flex-col items-center gap-2 py-10">
-                      <Loader2 className="h-8 w-8 animate-spin text-whatsapp-500" />
-                      <span className="text-xs text-ink-500">Initializing QR stream...</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Status and countdown */}
-              <div className="flex items-center justify-between px-4 text-xs">
-                <div className="flex items-center gap-2 text-ink-600">
-                  <span className="flex h-2.5 w-2.5 rounded-full bg-whatsapp-500">
-                    <span className="h-full w-full animate-ping rounded-full bg-whatsapp-500 opacity-75" />
-                  </span>
-                  <span>Waiting for scan... (Refreshes in {qrTimer}s)</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={fetchDashboardQr}
-                  disabled={qrLoading}
-                  className="font-semibold text-whatsapp-700 hover:text-whatsapp-800 flex items-center gap-1"
-                >
-                  <RefreshCw className={`h-3 w-3 ${qrLoading ? 'animate-spin' : ''}`} />
-                  Refresh
-                </button>
-              </div>
-
-              {/* Step instructions */}
-              <div className="mt-6 rounded-xl bg-cream-100 p-4 text-left">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-ink-700 mb-2">
-                  Follow these steps:
-                </p>
-                <ol className="space-y-1.5 text-xs text-ink-600">
-                  <li>1. Open WhatsApp on your mobile phone.</li>
-                  <li>2. Tap <strong>Settings</strong> (or 3 dots menu on Android) → <strong>Linked Devices</strong>.</li>
-                  <li>3. Tap <strong>Link a Device</strong> and point your phone camera at the QR code above.</li>
-                </ol>
-              </div>
-
-              {/* Simulation Option for testing when CloudStation is sleeping */}
-              <div className="mt-4 pt-2">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      await fetch('/api/simulate-connection', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ connected: true })
-                      });
-                      setConnectionStatus('open');
-                      const cRes = await fetch('/api/contacts');
-                      if (cRes.ok) {
-                        const cData = await cRes.json();
-                        setContacts(cData.chats || []);
-                      }
-                    } catch (err) {
-                      console.error('Error simulating connection:', err);
-                    }
-                  }}
-                  className="w-full flex items-center justify-center gap-2 rounded-xl border border-whatsapp-500 bg-whatsapp-50/80 py-2.5 px-4 text-xs font-bold text-whatsapp-800 hover:bg-whatsapp-500 hover:text-white transition"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  <span>Simulate WhatsApp Scan (Bypass / Demo Mode)</span>
-                </button>
-              </div>
-            </div>
-          </Card>
-        </motion.div>
-      ) : (
-        /* IF WHATSAPP IS LINKED -> SHOW REAL CONTACTS & CONVERSATIONS */
-        <div>
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="font-serif text-xl font-bold text-ink-900">
-                WhatsApp Contacts & Active Chats
-              </h2>
               <p className="text-xs text-ink-500">
                 {contacts.length} real synced WhatsApp contacts. Click any chat to view messages or auto-respond with AI.
               </p>
@@ -773,9 +678,9 @@ export default function DashboardHome() {
             )}
           </Card>
         </div>
-      )}
 
       {/* Conversation Drawer / Modal */}
+
       {selectedContact && (
         <Modal
           open={!!selectedContact}
@@ -896,6 +801,68 @@ export default function DashboardHome() {
           </div>
         </Modal>
       )}
+
+      {/* Dedicated QR Code Modal (Non-intrusive, keeps dashboard contacts always visible) */}
+      <Modal
+        open={qrModalOpen}
+        onClose={() => setQrModalOpen(false)}
+        title="Link WhatsApp (Scan Live QR)"
+        footer={
+          <div className="flex items-center justify-between w-full">
+            <span className="text-xs text-ink-500 font-medium">Refreshes in {qrTimer}s</span>
+            <div className="flex gap-2">
+              <Button variant="ghost" onClick={() => setQrModalOpen(false)}>
+                Close
+              </Button>
+              <Button onClick={fetchDashboardQr} disabled={qrLoading} className="gap-1.5">
+                <RefreshCw className={`h-3.5 w-3.5 ${qrLoading ? 'animate-spin' : ''}`} />
+                Refresh QR
+              </Button>
+            </div>
+          </div>
+        }
+      >
+        <div className="text-center py-2">
+          <p className="text-xs text-ink-500 max-w-sm mx-auto mb-4">
+            Scan this QR code with WhatsApp on your phone (Linked Devices) to link your account.
+          </p>
+
+          <div className="flex justify-center my-4">
+            <div
+              className="relative flex items-center justify-center rounded-2xl border-2 border-whatsapp-400 bg-white p-4 shadow-lg"
+              style={{ minHeight: '260px', minWidth: '260px' }}
+            >
+              {qrLoading ? (
+                <div className="flex flex-col items-center gap-3 py-10">
+                  <Loader2 className="h-8 w-8 animate-spin text-whatsapp-500" />
+                  <span className="text-xs text-ink-500 font-medium">Fetching live QR code...</span>
+                </div>
+              ) : dashboardQr ? (
+                <img
+                  src={dashboardQr}
+                  alt="WhatsApp QR Code"
+                  className="h-56 w-56 rounded-lg object-contain"
+                />
+              ) : (
+                <div className="flex flex-col items-center gap-2 py-10">
+                  <Loader2 className="h-8 w-8 animate-spin text-whatsapp-500" />
+                  <span className="text-xs text-ink-500">Initializing QR stream...</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl bg-cream-100 p-3.5 text-left text-xs text-ink-600">
+            <p className="font-bold text-ink-800 mb-1">Quick Steps:</p>
+            <ol className="list-decimal pl-4 space-y-1">
+              <li>Open <strong>WhatsApp</strong> on your mobile phone.</li>
+              <li>Go to <strong>Settings</strong> (or 3 dots menu on Android) &gt; <strong>Linked Devices</strong>.</li>
+              <li>Tap <strong>Link a Device</strong> and point your camera at this QR code.</li>
+            </ol>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
+

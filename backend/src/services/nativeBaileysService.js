@@ -165,14 +165,16 @@ export class NativeBaileysService {
         if (connection === 'close') {
           const statusCode = (lastDisconnect?.error)?.output?.statusCode;
           const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-          this.connectionState = 'close';
           this.isStarting = false;
 
           console.log(`[Native Baileys] Connection closed. Reason: ${lastDisconnect?.error?.message || statusCode}. Reconnect: ${shouldReconnect}`);
 
           if (shouldReconnect) {
-            setTimeout(() => this.start(), 3000);
+            // Keep connectionState as connecting so API and frontend don't assume hard logout
+            this.connectionState = 'connecting';
+            setTimeout(() => this.start(), 2000);
           } else {
+            this.connectionState = 'close';
             console.log('[Native Baileys] Logged out. Resetting session credentials...');
             this.resetSession();
             setTimeout(() => this.start(), 1500);
@@ -182,6 +184,7 @@ export class NativeBaileysService {
           this.qrCode = null;
           this.qrRaw = null;
           this.isStarting = false;
+
 
           const rawId = this.sock?.user?.id || '';
           this.userNumber = rawId ? rawId.split(':')[0].replace(/[^0-9]/g, '') : 'WhatsApp User';
@@ -458,7 +461,40 @@ export class NativeBaileysService {
     }
   }
 
+  hasValidCredentials() {
+    try {
+      const credsPath = path.join(AUTH_DIR, 'creds.json');
+      if (fs.existsSync(credsPath)) {
+        const stats = fs.statSync(credsPath);
+        return stats.size > 200;
+      }
+    } catch {}
+    return false;
+  }
+
   async getQrCode() {
+    if (this.connectionState === 'open') {
+      return {
+        success: true,
+        connectionState: 'open',
+        base64: null,
+        number: this.userNumber,
+        instance: 'native-baileys'
+      };
+    }
+
+    // If session credentials exist and socket is reconnecting, do not generate disruptive QR
+    if (this.hasValidCredentials() && this.connectionState === 'connecting') {
+      return {
+        success: true,
+        connectionState: 'connecting',
+        base64: null,
+        number: this.userNumber,
+        instance: 'native-baileys',
+        message: 'Reconnecting to existing WhatsApp session...'
+      };
+    }
+
     if (!this.sock && !this.isStarting) {
       this.start();
     }
@@ -479,6 +515,7 @@ export class NativeBaileysService {
         instance: 'native-baileys'
       };
     }
+
 
     if (this.qrCode) {
       return {
