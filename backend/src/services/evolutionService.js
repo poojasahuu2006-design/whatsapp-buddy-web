@@ -68,6 +68,9 @@ export function extractMessageText(lm) {
   if (lm.content && typeof lm.content === 'string') return lm.content.trim();
   if (lm.caption && typeof lm.caption === 'string') return lm.caption.trim();
 
+  return '';
+}
+
 // Helper to format WhatsApp message timestamps safely and reliably
 export function formatWhatsAppTimestamp(raw) {
   if (!raw) return 'Recent';
