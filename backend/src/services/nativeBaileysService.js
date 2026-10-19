@@ -103,6 +103,58 @@ export class NativeBaileysService {
     } catch {}
   }
 
+  async restoreSessionFromDB() {
+    try {
+      const { WhatsAppSession } = await import('../models/WhatsAppSession.js');
+      const doc = await WhatsAppSession.findOne({ sessionId: 'default' });
+      if (doc && doc.files && (doc.files.size > 0 || Object.keys(doc.files).length > 0)) {
+        if (!fs.existsSync(AUTH_DIR)) {
+          fs.mkdirSync(AUTH_DIR, { recursive: true });
+        }
+        const entries = doc.files instanceof Map ? doc.files.entries() : Object.entries(doc.files);
+        let restoredCount = 0;
+        for (const [filename, content] of entries) {
+          if (filename && content) {
+            const filePath = path.join(AUTH_DIR, filename);
+            fs.writeFileSync(filePath, Buffer.from(content, 'base64'));
+            restoredCount++;
+          }
+        }
+        console.log(`[Native Baileys] Restored ${restoredCount} session auth files from MongoDB Atlas.`);
+      }
+    } catch (err) {
+      console.warn('[Native Baileys] Session restore from MongoDB skipped:', err.message);
+    }
+  }
+
+  async saveSessionToDB() {
+    try {
+      if (!fs.existsSync(AUTH_DIR)) return;
+      const fileNames = fs.readdirSync(AUTH_DIR);
+      if (fileNames.length === 0) return;
+
+      const fileMap = new Map();
+      for (const fn of fileNames) {
+        if (fn.endsWith('.json')) {
+          const fullPath = path.join(AUTH_DIR, fn);
+          const data = fs.readFileSync(fullPath);
+          fileMap.set(fn, data.toString('base64'));
+        }
+      }
+
+      if (fileMap.size > 0) {
+        const { WhatsAppSession } = await import('../models/WhatsAppSession.js');
+        await WhatsAppSession.findOneAndUpdate(
+          { sessionId: 'default' },
+          { files: fileMap, updatedAt: new Date() },
+          { upsert: true }
+        );
+      }
+    } catch (err) {
+      console.warn('[Native Baileys] Session backup to MongoDB skipped:', err.message);
+    }
+  }
+
   setWebhookHandler(handler) {
     this.webhookHandler = handler;
   }
@@ -119,6 +171,9 @@ export class NativeBaileysService {
         fs.mkdirSync(AUTH_DIR, { recursive: true });
       }
 
+      // Restore credentials from MongoDB Atlas before initializing auth state
+      await this.restoreSessionFromDB();
+
       const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
       const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1043857760] }));
 
@@ -132,10 +187,10 @@ export class NativeBaileysService {
         browser: ['WhatsApp Buddy', 'Chrome', '124.0.0.0'],
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 60000,
-        keepAliveIntervalMs: 30000,
+        keepAliveIntervalMs: 25000,
         syncFullHistory: true,
         shouldSyncHistoryMessage: () => true,
-        markOnlineOnConnect: true,
+        markOnlineOnConnect: false,
         getMessage: async (key) => {
           const list = this.messagesMap.get(key.remoteJid) || [];
           const found = list.find((m) => m.id === key.id);
@@ -146,7 +201,11 @@ export class NativeBaileysService {
         }
       });
 
-      this.sock.ev.on('creds.update', saveCreds);
+      this.sock.ev.on('creds.update', async () => {
+        await saveCreds();
+        this.saveSessionToDB().catch(() => {});
+      });
+
 
       this.sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
@@ -689,10 +748,14 @@ export class NativeBaileysService {
         fs.rmSync(AUTH_DIR, { recursive: true, force: true });
         fs.mkdirSync(AUTH_DIR, { recursive: true });
       }
+      import('../models/WhatsAppSession.js').then(({ WhatsAppSession }) => {
+        WhatsAppSession.deleteOne({ sessionId: 'default' }).catch(() => {});
+      }).catch(() => {});
     } catch (err) {
       console.warn('[Native Baileys] Could not clear auth dir:', err.message);
     }
   }
 }
+
 
 export const nativeBaileysService = new NativeBaileysService();
