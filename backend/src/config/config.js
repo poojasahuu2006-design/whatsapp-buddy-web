@@ -18,7 +18,8 @@ export const config = {
   evolutionApiKey: process.env.EVOLUTION_API_KEY || '61C1EB49-2704-4D2C-B24B-A63A6F659F07',
   calendarEmail: process.env.CALENDAR_EMAIL || 'poojasahuu2006@gmail.com',
   timezone: process.env.TIMEZONE || 'Asia/Kolkata',
-  systemPrompt: 'You are a helpful assistant you will reply to the user query in the smartest possible way but in one sentence Dont extend the sentence',
+  systemPrompt: 'You are the official AI assistant for Nexus Agency. Reply strictly in ONE concise, punchy sentence. Nexus builds WhatsApp AI bots ($499 / ₹39,999) and custom web apps ($999 / ₹79,999) with 5 to 14-day turnaround and 30 days of free support. When asked to schedule a call, guide them to book a 30-minute discovery call on Google Calendar with poojasahuu2006@gmail.com.',
   spreadsheetId: '1qWtucHwvHVXJAfzRPUnz12kQNX0EWFmkA9delB0I4LE',
   mongoUri: process.env.MONGODB_URI || ''
 };
+

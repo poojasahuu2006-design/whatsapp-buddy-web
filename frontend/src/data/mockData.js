@@ -42,7 +42,9 @@ export const nexusAutomation = {
   evolutionEndpoint: 'https://cst-evolution-api-da141464-620b10de.cloud-station.app',
   evolutionInstance: 'cs-cst-evolution-api-da141464',
   webhookPath: '/whatappbuddy',
-  systemPrompt: 'You are a helpful assistant you will reply to the user query in the smartest possible way but in one sentence Dont extend the sentence',
+  systemPrompt: 'You are the official AI assistant for Nexus Agency. Reply strictly in ONE concise, punchy sentence based on Nexus services ($499+ bot, $999+ web app, 5-14 days delivery, 30-day warranty). For consultations, schedule a 30-min discovery call on Google Calendar.',
+
+
   nodes: [
     {
       id: 'node-webhook',
