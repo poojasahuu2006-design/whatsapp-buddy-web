@@ -1,5 +1,7 @@
 import { config } from '../config/config.js';
 import { calendarService } from './calendarService.js';
+import { findBestKnowledgeAnswer, KNOWLEDGE_BASE_ENTRIES } from './knowledgeBase.js';
+import axios from 'axios';
 
 export class AiAgentService {
   constructor() {
@@ -7,6 +9,7 @@ export class AiAgentService {
     this.timezone = config.timezone;
     this.spreadsheetId = config.spreadsheetId;
     this.systemPrompt = config.systemPrompt;
+    this.openAiApiKey = process.env.OPENAI_API_KEY || '';
   }
 
   async processMessage(incomingText, senderNumber) {
@@ -29,8 +32,7 @@ export class AiAgentService {
     });
 
     const isBookingQuery = /book|schedule|consultation|call|meeting|appointment|tomorrow|today|slot|milna|baat karni|\d+\s*(?:am|pm)/i.test(textLower);
-    const isKbQuery = /service|price|pricing|cost|nexus|timeline|how long|faq|pack|offer|package|turnaround|kya kaam|charges|fees|kaise kaam|rate/i.test(textLower);
-    const isGreeting = /^(hi|hello|hey|namaste|pranam|kaise ho|kese ho|good morning|good evening|good afternoon)\b/i.test(textLower);
+    const isGreeting = /^(hi|hello|hey|namaste|pranam|kaise ho|kese ho|good morning|good evening|good afternoon|sup)\b/i.test(textLower);
 
     if (isBookingQuery) {
       toolUsed = 'Create an event in Google Calendar';
@@ -51,15 +53,7 @@ export class AiAgentService {
 
       // Confirmation sentence with 1-click Google Calendar add link
       responseText = `${scheduleResult.confirmationSentence}\n\n📅 Add to Google Calendar: ${scheduleResult.googleCalendarUrl}`;
-    } else if (isKbQuery) {
-      toolUsed = 'Get row(s) in sheet in Google Sheets';
-      steps.push({
-        node: 'Google Sheets Tool',
-        status: 'done',
-        detail: `Queried Nexus_Agency_KnowledgeBase sheet (${this.spreadsheetId}) for services and packages`
-      });
-      responseText = 'Nexus agency builds WhatsApp AI automations, web applications, and digital systems starting at $499 with 7 to 14-day turnaround.';
-    } else if (isGreeting) {
+    } else if (isGreeting && textLower.length < 25) {
       toolUsed = 'OpenAI Chat Model (gpt-5-mini)';
       steps.push({
         node: 'AI Agent',
@@ -68,13 +62,74 @@ export class AiAgentService {
       });
       responseText = 'Hello! Welcome to Nexus Agency. We create autonomous WhatsApp AI agents, web apps, and business automations. How can we help you today?';
     } else {
-      toolUsed = 'OpenAI Chat Model (gpt-5-mini)';
-      steps.push({
-        node: 'AI Agent',
-        status: 'done',
-        detail: 'Processed general query using system prompt (1-sentence limit enforced)'
-      });
-      responseText = 'Nexus agency is ready to help automate your business operations and accelerate your growth with custom AI solutions.';
+      // Check Knowledge Base first
+      const kbMatch = findBestKnowledgeAnswer(incomingText);
+
+      // If OpenAI API key is available, optionally prompt OpenAI with KB context
+      if (this.openAiApiKey) {
+        try {
+          toolUsed = 'OpenAI Chat Model (gpt-4o-mini)';
+          const promptContext = kbMatch 
+            ? `Relevant Knowledge Base Entry: [${kbMatch.entry.topic}]: ${kbMatch.entry.detailedContext}`
+            : 'Knowledge Base: Nexus Agency builds WhatsApp AI agents ($499+), custom web apps ($999+), 5-14 day turnaround, 30-day warranty.';
+
+          const aiRes = await axios.post(
+            'https://api.openai.com/v1/chat/completions',
+            {
+              model: 'gpt-4o-mini',
+              messages: [
+                {
+                  role: 'system',
+                  content: `${this.systemPrompt}. You represent Nexus Agency. Context: ${promptContext}. Reply strictly in 1 smart, professional sentence.`
+                },
+                {
+                  role: 'user',
+                  content: incomingText
+                }
+              ],
+              max_tokens: 120,
+              temperature: 0.3
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${this.openAiApiKey}`,
+                'Content-Type': 'application/json'
+              },
+              timeout: 8000
+            }
+          );
+
+          responseText = aiRes.data.choices?.[0]?.message?.content?.trim();
+          steps.push({
+            node: 'AI Agent (OpenAI)',
+            status: 'done',
+            detail: `Answered using GPT-4o-mini with Knowledge Base context on "${kbMatch ? kbMatch.entry.topic : 'General'}"`
+          });
+        } catch (err) {
+          console.warn('[AiAgentService] OpenAI call failed, falling back to structured KB:', err.message);
+        }
+      }
+
+      // If responseText is still empty (no OpenAI key or error), use structured KB or fallback
+      if (!responseText) {
+        if (kbMatch) {
+          toolUsed = 'Get row(s) in sheet in Google Sheets';
+          steps.push({
+            node: 'Google Sheets Tool',
+            status: 'done',
+            detail: `Matched topic "${kbMatch.entry.topic}" in KnowledgeBase (${this.spreadsheetId})`
+          });
+          responseText = kbMatch.response;
+        } else {
+          toolUsed = 'OpenAI Chat Model (gpt-5-mini)';
+          steps.push({
+            node: 'AI Agent',
+            status: 'done',
+            detail: 'Processed general query using system prompt (1-sentence limit enforced)'
+          });
+          responseText = 'Nexus Agency provides 24/7 autonomous WhatsApp AI solutions, custom web applications, and workflow automations to scale your business.';
+        }
+      }
     }
 
     return {
@@ -86,3 +141,4 @@ export class AiAgentService {
 }
 
 export const aiAgentService = new AiAgentService();
+
