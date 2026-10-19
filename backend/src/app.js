@@ -7,9 +7,18 @@ import { handleWebhook } from './controllers/webhookController.js';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerDocument } from './config/swagger.js';
 
+import fs from 'fs';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const frontendDist = path.resolve(__dirname, '../../frontend/dist');
+const distCandidates = [
+  path.resolve(__dirname, '../../frontend/dist'),
+  path.resolve(__dirname, '../public'),
+  path.resolve(process.cwd(), 'frontend/dist'),
+  path.resolve(process.cwd(), 'public')
+];
+const frontendDist = distCandidates.find((d) => fs.existsSync(path.join(d, 'index.html'))) || distCandidates[0];
+
 
 const app = express();
 

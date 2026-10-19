@@ -32,7 +32,7 @@ export class AiAgentService {
     });
 
     const isBookingQuery = /book|schedule|consultation|call|meeting|appointment|tomorrow|today|slot|milna|baat karni|\d+\s*(?:am|pm)/i.test(textLower);
-    const isGreeting = /^(hi|hello|hey|namaste|pranam|kaise ho|kese ho|good morning|good evening|good afternoon|sup)\b/i.test(textLower);
+    const isGreeting = /^h+(i+|e+y*|e+l+o+)\b|^namaste|^pranam|^kaise ho|^kese ho|^good (morning|afternoon|evening)|^sup\b/i.test(textLower);
 
     if (isBookingQuery) {
       toolUsed = 'Create an event in Google Calendar';
@@ -53,7 +53,7 @@ export class AiAgentService {
 
       // Confirmation sentence with 1-click Google Calendar add link
       responseText = `${scheduleResult.confirmationSentence}\n\n📅 Add to Google Calendar: ${scheduleResult.googleCalendarUrl}`;
-    } else if (isGreeting && textLower.length < 25) {
+    } else if (isGreeting && textLower.length < 30) {
       toolUsed = 'OpenAI Chat Model (gpt-5-mini)';
       steps.push({
         node: 'AI Agent',
@@ -62,6 +62,7 @@ export class AiAgentService {
       });
       responseText = 'Hello! Welcome to Nexus Agency. We create autonomous WhatsApp AI agents, web apps, and business automations. How can we help you today?';
     } else {
+
       // Check Knowledge Base first
       const kbMatch = findBestKnowledgeAnswer(incomingText);
 
@@ -127,8 +128,9 @@ export class AiAgentService {
             status: 'done',
             detail: 'Processed general query using system prompt (1-sentence limit enforced)'
           });
-          responseText = 'Nexus Agency provides 24/7 autonomous WhatsApp AI solutions, custom web applications, and workflow automations to scale your business.';
+          responseText = 'Nexus Agency builds autonomous WhatsApp AI bots ($499+), custom web applications ($999+), and workflow automations—how can we assist you today?';
         }
+
       }
     }
 
