@@ -329,8 +329,20 @@ export default function DashboardHome() {
     }
   };
 
-  // Filter contacts by search and tab
-  const filteredContacts = contacts.filter((c) => {
+  // Filter out unsaved strangers from large groups
+  const isPhone = (str) => /^\+?[\d\s\-()]{7,}$/.test((str || '').trim());
+  const isRealSavedContact = (c) => {
+    if (c.isGroup) return true;
+    if (c.isReal !== undefined) return c.isReal;
+    const isSaved = !!(c.name && typeof c.name === 'string' && !isPhone(c.name) && !c.name.startsWith('+') && !c.name.includes('@'));
+    const hasChatHistory = !!(c.lastMessage && c.lastMessage !== 'Tap to chat' && c.lastMessage !== 'Synced from WhatsApp');
+    return isSaved || hasChatHistory;
+  };
+
+  const realContacts = contacts.filter(isRealSavedContact);
+  const baseList = activeTab === 'all-raw' ? contacts : realContacts;
+
+  const filteredContacts = baseList.filter((c) => {
     const matchesSearch =
       (c.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (c.phone || '').includes(searchQuery) ||
@@ -342,13 +354,13 @@ export default function DashboardHome() {
     return true;
   });
 
-  const totalContactsCount = contacts.length;
-  const directContactsCount = contacts.filter((c) => !c.isGroup).length;
-  const groupsCount = contacts.filter((c) => c.isGroup).length;
-  const activeWithMessages = contacts.filter(
+  const totalContactsCount = realContacts.length;
+  const directContactsCount = realContacts.filter((c) => !c.isGroup).length;
+  const groupsCount = realContacts.filter((c) => c.isGroup).length;
+  const activeWithMessages = realContacts.filter(
     (c) => c.lastMessage && c.lastMessage !== 'Tap to chat' && c.lastMessage !== 'Synced from WhatsApp'
   ).length;
-  const unreadChatsCount = contacts.filter((c) => (c.unread || 0) > 0).length;
+  const unreadChatsCount = realContacts.filter((c) => (c.unread || 0) > 0).length;
   const isLinked = connectionStatus === 'open';
 
   // Dynamic percentages calculated strictly from real contact numbers
@@ -466,11 +478,11 @@ export default function DashboardHome() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
           {
-            label: 'Total Synced Contacts',
+            label: 'Saved Contacts & Chats',
             value: totalContactsCount.toLocaleString(),
-            badge: `${totalContactsCount > 0 ? '100% Synced' : '0%'}`,
+            badge: `${totalContactsCount > 0 ? 'Real Contacts' : '0%'}`,
             badgeStyle: 'bg-whatsapp-50 text-whatsapp-700',
-            sub: `${directContactsCount.toLocaleString()} Direct · ${groupsCount.toLocaleString()} Groups`,
+            sub: `${directContactsCount.toLocaleString()} Saved People · ${groupsCount.toLocaleString()} Groups`,
             sparkline: dynamicContactsSparkline,
           },
           {
@@ -578,7 +590,7 @@ export default function DashboardHome() {
                     activeTab === 'all' ? 'bg-white font-bold text-ink-900 shadow-2xs' : 'text-ink-500 hover:text-ink-800'
                   }`}
                 >
-                  All ({contacts.length})
+                  Saved Contacts ({totalContactsCount})
                 </button>
                 <button
                   type="button"
@@ -587,7 +599,7 @@ export default function DashboardHome() {
                     activeTab === 'individual' ? 'bg-white font-bold text-ink-900 shadow-2xs' : 'text-ink-500 hover:text-ink-800'
                   }`}
                 >
-                  Direct Contacts ({directContactsCount})
+                  Direct ({directContactsCount})
                 </button>
                 <button
                   type="button"
