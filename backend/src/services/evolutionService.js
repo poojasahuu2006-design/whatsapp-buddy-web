@@ -455,7 +455,7 @@ export class EvolutionService {
         // 1. Index all contacts by JID to store their real names and profile pics
         for (const c of rawContacts) {
           const jid = c.remoteJid || c.id || '';
-          if (jid && !jid.endsWith('@broadcast') && !jid.endsWith('@lid')) {
+          if (jid && !jid.endsWith('@broadcast')) {
             contactInfoMap.set(jid, c);
           }
         }
@@ -463,7 +463,7 @@ export class EvolutionService {
         // 2. Process all chats and merge with contact info
         for (const ch of rawChats) {
           const jid = ch.remoteJid || ch.id || '';
-          if (jid && !jid.endsWith('@broadcast') && !jid.endsWith('@lid')) {
+          if (jid && !jid.endsWith('@broadcast')) {
             const matched = contactInfoMap.get(jid) || {};
             // Intelligently merge: do not let a null/phone name overwrite a real human name
             const bestName = (!isPhoneNumber(matched.name) && matched.name) ||

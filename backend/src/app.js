@@ -36,6 +36,9 @@ app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api') || req.path === '/whatappbuddy' || req.path === '/webhook') {
     return next();
   }
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.sendFile(path.join(frontendDist, 'index.html'), (err) => {
     if (err) {
       // If frontend/dist is not built yet, fallback to API status

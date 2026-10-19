@@ -133,7 +133,17 @@ export class NativeBaileysService {
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 60000,
         keepAliveIntervalMs: 30000,
-        syncFullHistory: true
+        syncFullHistory: true,
+        shouldSyncHistoryMessage: () => true,
+        markOnlineOnConnect: true,
+        getMessage: async (key) => {
+          const list = this.messagesMap.get(key.remoteJid) || [];
+          const found = list.find((m) => m.id === key.id);
+          if (found) {
+            return { conversation: found.text };
+          }
+          return undefined;
+        }
       });
 
       this.sock.ev.on('creds.update', saveCreds);
@@ -268,7 +278,7 @@ export class NativeBaileysService {
         if (Array.isArray(messages)) {
           for (const msg of messages) {
             const remoteJid = msg.key?.remoteJid;
-            if (!remoteJid || remoteJid.includes('@broadcast') || remoteJid.includes('@lid')) continue;
+            if (!remoteJid || remoteJid.includes('@broadcast')) continue;
 
             const text = extractMessageText(msg);
             const rawTime = msg.messageTimestamp;
@@ -395,9 +405,11 @@ export class NativeBaileysService {
 
     // 1. Process contacts
     for (const [id, c] of this.contactsMap.entries()) {
-      if (!id || id.includes('@broadcast') || id.includes('@lid')) continue;
+      if (!id || id.includes('@broadcast')) continue;
       const isGroup = id.endsWith('@g.us');
-      const cleanPhone = isGroup ? '' : id.replace('@s.whatsapp.net', '').replace(/[^0-9]/g, '');
+      const cleanPhone = isGroup
+        ? ''
+        : (c.phone || c.phoneNumber || (id.includes('@s.whatsapp.net') ? id.replace('@s.whatsapp.net', '') : '')).replace(/[^0-9]/g, '');
       const existing = this.chatsMap.get(id);
 
       const merged = { ...c, ...(existing || {}) };
@@ -422,9 +434,11 @@ export class NativeBaileysService {
 
     // 2. Process groups or active chats that are in chatsMap but not in contactsMap
     for (const [id, ch] of this.chatsMap.entries()) {
-      if (!id || id.includes('@broadcast') || id.includes('@lid')) continue;
+      if (!id || id.includes('@broadcast')) continue;
       const isGroup = id.endsWith('@g.us');
-      const cleanPhone = isGroup ? '' : id.replace('@s.whatsapp.net', '').replace(/[^0-9]/g, '');
+      const cleanPhone = isGroup
+        ? ''
+        : (ch.phone || (id.includes('@s.whatsapp.net') ? id.replace('@s.whatsapp.net', '') : '')).replace(/[^0-9]/g, '');
       const displayName = resolveContactName(ch, cleanPhone, isGroup);
       const initials = resolveInitials(displayName);
 
