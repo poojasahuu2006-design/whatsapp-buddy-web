@@ -603,7 +603,7 @@ export class NativeBaileysService {
     };
   }
 
-  // Get active contacts & chats synced from real WhatsApp (filtered to real saved contacts & active chats)
+  // Get active contacts & chats synced from real WhatsApp
   async getChats() {
     this.syncToChatsMap();
     const syncedList = Array.from(this.chatsMap.values());
@@ -616,8 +616,6 @@ export class NativeBaileysService {
         const cleanPhone = isGroup ? '' : (c.phone || (c.remoteJid ? c.remoteJid.replace('@s.whatsapp.net', '').replace(/[^0-9]/g, '') : ''));
         const name = resolveContactName(c, cleanPhone, isGroup);
         const initials = resolveInitials(name);
-        const hasChatHistory = !!(c.lastMessage && c.lastMessage !== 'Tap to chat' && c.lastMessage !== 'Synced from WhatsApp');
-        const isSaved = !!(c.name && typeof c.name === 'string' && !isPhoneNumber(c.name) && !c.name.startsWith('+') && !c.name.includes('@'));
 
         return {
           id: c.id || c.remoteJid,
@@ -627,9 +625,6 @@ export class NativeBaileysService {
           initials,
           color: c.color || colors[i % colors.length],
           isGroup,
-          isSaved,
-          hasChatHistory,
-          isReal: isGroup || isSaved || hasChatHistory,
           unread: c.unread || 0,
           lastMessage: c.lastMessage || 'Tap to chat',
           timestamp: formatWhatsAppTimestamp(c.timestamp),
@@ -637,16 +632,10 @@ export class NativeBaileysService {
         };
       });
 
-    // Only count and display real Saved Contacts, Active Chats, and Groups
-    // Filter out random unsaved strangers dumped from large WhatsApp groups
-    const realContacts = formattedSynced.filter((c) => c.isReal);
-
     return {
       success: true,
-      total: realContacts.length,
-      totalRaw: formattedSynced.length,
-      chats: realContacts,
-      allChats: formattedSynced
+      total: formattedSynced.length,
+      chats: formattedSynced
     };
   }
 
