@@ -4,6 +4,19 @@ import { executionRuns } from './automationController.js';
 import { MessageLog } from '../models/MessageLog.js';
 import { Lead } from '../models/Lead.js';
 
+// In-memory deduplication cache to prevent duplicate AI responses (e.g. Baileys socket + HTTP webhook dual trigger)
+const processedMessagesCache = new Map();
+
+// Periodically clean up entries older than 30 seconds
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, timestamp] of processedMessagesCache.entries()) {
+    if (now - timestamp > 30000) {
+      processedMessagesCache.delete(key);
+    }
+  }
+}, 15000);
+
 export const processIncomingMessage = async (data) => {
   const startTime = Date.now();
   const key = data?.key || {};
@@ -45,9 +58,28 @@ export const processIncomingMessage = async (data) => {
     return { status: 'skipped', message: 'No text or caption content found' };
   }
 
+  // Bulletproof Deduplication: Check message ID and sender:content signature
+  const messageId = key?.id || data?.id || data?.messageId;
+  const dedupKeyId = messageId ? `id:${messageId}` : null;
+  const dedupKeyContent = `msg:${remoteJid || recipientNumber}:${incomingText.trim().toLowerCase()}`;
+
+  const now = Date.now();
+  if (
+    (dedupKeyId && processedMessagesCache.has(dedupKeyId) && (now - processedMessagesCache.get(dedupKeyId)) < 20000) ||
+    (processedMessagesCache.has(dedupKeyContent) && (now - processedMessagesCache.get(dedupKeyContent)) < 10000)
+  ) {
+    console.log(`⚡ [Deduplication] Dropping duplicate incoming message trigger from ${remoteJid || recipientNumber} ("${incomingText.slice(0, 30)}...")`);
+    return { status: 'skipped', message: 'Duplicate message already being processed' };
+  }
+
+  // Register in deduplication cache
+  if (dedupKeyId) processedMessagesCache.set(dedupKeyId, now);
+  processedMessagesCache.set(dedupKeyContent, now);
+
   console.log(`\n======================================================`);
   console.log(`📩 [WhatsApp Webhook] Incoming Message from: ${remoteJid || recipientNumber}`);
   console.log(`💬 Message: "${incomingText}"`);
+
 
   // Run AI Agent reasoning & tool execution
   const { responseText, toolUsed, steps } = await aiAgentService.processMessage(incomingText, recipientNumber || remoteJid);
