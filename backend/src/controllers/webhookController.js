@@ -54,11 +54,17 @@ export const processIncomingMessage = async (data) => {
 
   console.log(`🤖 [Nexus Company AI Reply]: "${responseText}"`);
 
-  // Dispatches message back directly to sender remoteJid
-  const targetRecipient = remoteJid || recipientNumber;
+  // Dispatches message back directly to sender (prioritize standard phone JID for delivery)
+  let targetRecipient = remoteJid;
+  if (recipientNumber && /^\d{6,}$/.test(recipientNumber)) {
+    targetRecipient = `${recipientNumber}@s.whatsapp.net`;
+  } else if (remoteJidAlt && remoteJidAlt.includes('@s.whatsapp.net')) {
+    targetRecipient = remoteJidAlt;
+  }
+
   const dispatchResult = await evolutionService.sendTextMessage(targetRecipient, responseText);
   
-  console.log(`📤 [WhatsApp Dispatch Status]:`, dispatchResult.success ? 'SUCCESS (Message Sent)' : `FAILED: ${dispatchResult.error}`);
+  console.log(`📤 [WhatsApp Dispatch Status]:`, dispatchResult.success ? `SUCCESS (Message Sent to ${targetRecipient})` : `FAILED: ${dispatchResult.error}`);
   console.log(`======================================================\n`);
 
   // Persist conversation and update lead profile in MongoDB

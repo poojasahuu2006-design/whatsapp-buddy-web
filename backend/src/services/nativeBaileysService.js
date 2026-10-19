@@ -12,7 +12,8 @@ import {
   extractMessageText,
   resolveContactName,
   resolveInitials,
-  isPhoneNumber
+  isPhoneNumber,
+  formatWhatsAppTimestamp
 } from './evolutionService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -36,7 +37,7 @@ export class NativeBaileysService {
     this.loadCachedContacts();
   }
 
-  loadCachedContacts() {
+  async loadCachedContacts() {
     try {
       if (fs.existsSync(CONTACTS_CACHE_FILE)) {
         const data = JSON.parse(fs.readFileSync(CONTACTS_CACHE_FILE, 'utf-8'));
@@ -49,15 +50,56 @@ export class NativeBaileysService {
         }
       }
     } catch {}
+
+    // Restore from MongoDB Atlas if available so contacts survive Render cloud restarts
+    try {
+      const { Lead } = await import('../models/Lead.js');
+      const leads = await Lead.find({}).sort({ updatedAt: -1 });
+      if (Array.isArray(leads) && leads.length > 0) {
+        for (const l of leads) {
+          const cleanPhone = l.phoneNumber.replace(/[^0-9]/g, '');
+          const jid = l.phoneNumber.includes('@') ? l.phoneNumber : `${cleanPhone}@s.whatsapp.net`;
+          if (!this.chatsMap.has(jid)) {
+            this.chatsMap.set(jid, {
+              id: jid,
+              remoteJid: jid,
+              phone: cleanPhone,
+              name: l.name || `+${cleanPhone}`,
+              lastMessage: l.lastMessage || 'Tap to chat',
+              timestamp: 'Recent',
+              isGroup: false
+            });
+          }
+        }
+      }
+    } catch {}
   }
 
-  saveCachedContacts() {
+  async saveCachedContacts() {
     try {
       if (!fs.existsSync(AUTH_DIR)) {
         fs.mkdirSync(AUTH_DIR, { recursive: true });
       }
       const list = Array.from(this.chatsMap.values());
       fs.writeFileSync(CONTACTS_CACHE_FILE, JSON.stringify(list, null, 2));
+
+      // Persist to MongoDB in background so contacts survive cloud restarts
+      import('../models/Lead.js').then(({ Lead }) => {
+        const directChats = list.filter((c) => c.phone && !c.isGroup);
+        for (const c of directChats.slice(0, 100)) {
+          Lead.updateOne(
+            { phoneNumber: c.phone },
+            {
+              $set: {
+                name: c.name || `+${c.phone}`,
+                lastMessage: c.lastMessage || 'Tap to chat',
+                lastActive: new Date()
+              }
+            },
+            { upsert: true }
+          ).catch(() => {});
+        }
+      }).catch(() => {});
     } catch {}
   }
 
@@ -90,7 +132,8 @@ export class NativeBaileysService {
         browser: ['WhatsApp Buddy', 'Chrome', '124.0.0.0'],
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 60000,
-        keepAliveIntervalMs: 30000
+        keepAliveIntervalMs: 30000,
+        syncFullHistory: true
       });
 
       this.sock.ev.on('creds.update', saveCreds);
@@ -139,6 +182,30 @@ export class NativeBaileysService {
         }
       });
 
+      // Synchronize full initial Contacts dump from WhatsApp
+      this.sock.ev.on('contacts.set', ({ contacts }) => {
+        if (!Array.isArray(contacts)) return;
+        for (const c of contacts) {
+          if (c.id) {
+            this.contactsMap.set(c.id, { ...this.contactsMap.get(c.id), ...c });
+          }
+        }
+        this.syncToChatsMap();
+        console.log(`[Native Baileys] Received full contacts.set: ${contacts.length} contacts synced`);
+      });
+
+      // Synchronize full initial Chats dump from WhatsApp
+      this.sock.ev.on('chats.set', ({ chats }) => {
+        if (!Array.isArray(chats)) return;
+        for (const ch of chats) {
+          if (ch.id) {
+            this.chatsMap.set(ch.id, { ...this.chatsMap.get(ch.id), ...ch });
+          }
+        }
+        this.saveCachedContacts();
+        console.log(`[Native Baileys] Received full chats.set: ${chats.length} chats synced`);
+      });
+
       // Synchronize Contacts from WhatsApp
       this.sock.ev.on('contacts.upsert', (newContacts) => {
         if (!Array.isArray(newContacts)) return;
@@ -171,6 +238,16 @@ export class NativeBaileysService {
         this.saveCachedContacts();
       });
 
+      this.sock.ev.on('chats.update', (updatedChats) => {
+        if (!Array.isArray(updatedChats)) return;
+        for (const ch of updatedChats) {
+          if (ch.id) {
+            this.chatsMap.set(ch.id, { ...this.chatsMap.get(ch.id), ...ch });
+          }
+        }
+        this.saveCachedContacts();
+      });
+
       this.sock.ev.on('messaging-history.set', ({ contacts, chats, messages }) => {
         if (Array.isArray(contacts)) {
           for (const c of contacts) {
@@ -195,11 +272,7 @@ export class NativeBaileysService {
 
             const text = extractMessageText(msg);
             const rawTime = msg.messageTimestamp;
-            const time = rawTime
-              ? (typeof rawTime === 'number' && rawTime < 1e12
-                  ? new Date(rawTime * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                  : new Date(rawTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
-              : 'Recent';
+            const time = formatWhatsAppTimestamp(rawTime);
 
             // Enrich contact name from pushName if missing or phone
             if (msg.pushName && !msg.key?.fromMe) {
@@ -444,7 +517,7 @@ export class NativeBaileysService {
           isGroup,
           unread: c.unread || 0,
           lastMessage: c.lastMessage || 'Tap to chat',
-          timestamp: c.timestamp || 'Recent',
+          timestamp: formatWhatsAppTimestamp(c.timestamp),
           profilePicUrl: c.profilePicUrl || null
         };
       });
@@ -473,7 +546,26 @@ export class NativeBaileysService {
   }
 
   async sendTextMessage(number, text) {
-    const cleanNumber = number.includes('@') ? number : `${number.replace(/[^0-9]/g, '')}@s.whatsapp.net`;
+    if (!text || !text.trim()) {
+      return { success: false, error: 'Message text cannot be empty' };
+    }
+
+    let cleanNumber = String(number || '').trim();
+    if (!cleanNumber.includes('@')) {
+      const digits = cleanNumber.replace(/[^0-9]/g, '');
+      if (!digits) {
+        return { success: false, error: 'Invalid recipient number' };
+      }
+      cleanNumber = `${digits}@s.whatsapp.net`;
+    }
+
+    // If destination is a modern WhatsApp LID, check if we have mapped direct phone JID
+    if (cleanNumber.endsWith('@lid')) {
+      const matched = this.chatsMap.get(cleanNumber) || this.contactsMap.get(cleanNumber);
+      if (matched?.phone && /^\d{6,}$/.test(matched.phone)) {
+        cleanNumber = `${matched.phone}@s.whatsapp.net`;
+      }
+    }
 
     if (!this.sock || this.connectionState !== 'open') {
       return {
@@ -496,6 +588,15 @@ export class NativeBaileysService {
         fromMe: true
       });
       this.messagesMap.set(cleanNumber, list);
+
+      // Also immediately update latest chat preview in chatsMap
+      const ch = this.chatsMap.get(cleanNumber) || {};
+      this.chatsMap.set(cleanNumber, {
+        ...ch,
+        lastMessage: text.trim(),
+        timestamp: 'Just now'
+      });
+      this.saveCachedContacts();
 
       return {
         success: true,

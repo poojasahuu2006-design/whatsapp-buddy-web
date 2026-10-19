@@ -68,8 +68,56 @@ export function extractMessageText(lm) {
   if (lm.content && typeof lm.content === 'string') return lm.content.trim();
   if (lm.caption && typeof lm.caption === 'string') return lm.caption.trim();
 
-  return '';
+// Helper to format WhatsApp message timestamps safely and reliably
+export function formatWhatsAppTimestamp(raw) {
+  if (!raw) return 'Recent';
+  if (typeof raw === 'string') {
+    if (raw.toLowerCase().includes('invalid')) return 'Recent';
+    if (raw === 'Recent' || raw === 'Just now' || raw.includes(':') || raw.includes('Yesterday')) {
+      return raw;
+    }
+  }
+
+  let ms = 0;
+  if (typeof raw === 'number') {
+    ms = raw < 1e12 ? raw * 1000 : raw;
+  } else if (typeof raw === 'object' && raw !== null) {
+    if (typeof raw.toNumber === 'function') {
+      const n = raw.toNumber();
+      ms = n < 1e12 ? n * 1000 : n;
+    } else if (raw.low !== undefined) {
+      const n = Number(raw.low);
+      ms = n < 1e12 ? n * 1000 : n;
+    } else if (raw instanceof Date) {
+      ms = raw.getTime();
+    }
+  } else if (typeof raw === 'string') {
+    const num = Number(raw);
+    if (!isNaN(num) && num > 0) {
+      ms = num < 1e12 ? num * 1000 : num;
+    } else {
+      const parsed = Date.parse(raw);
+      if (!isNaN(parsed)) ms = parsed;
+    }
+  }
+
+  if (!ms || isNaN(ms) || ms <= 0) return 'Recent';
+
+  const date = new Date(ms);
+  if (isNaN(date.getTime())) return 'Recent';
+
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday = date.toDateString() === yesterday.toDateString();
+
+  const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (isToday) return timeStr;
+  if (isYesterday) return `Yesterday ${timeStr}`;
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
+
 
 // Helper to resolve the best real display name for a contact
 export function resolveContactName(c, phone, isGroup) {
@@ -388,12 +436,12 @@ export class EvolutionService {
         axios.post(
           `${this.apiUrl}/chat/findChats/${targetInstance}`,
           {},
-          { headers: { apikey: this.apiKey }, timeout: 3500 }
+          { headers: { apikey: this.apiKey }, timeout: 15000 }
         ),
         axios.post(
           `${this.apiUrl}/chat/findContacts/${targetInstance}`,
           {},
-          { headers: { apikey: this.apiKey }, timeout: 3500 }
+          { headers: { apikey: this.apiKey }, timeout: 15000 }
         )
       ]);
 
@@ -454,23 +502,7 @@ export class EvolutionService {
           const lastMsgText = extractMessageText(c.lastMessage) || 'Tap to chat';
 
           const rawTime = c.updatedAt || c.conversationTimestamp || c.lastMessage?.messageTimestamp || c.timestamp;
-          let timestamp = 'Recent';
-          if (rawTime && rawTime !== 'Invalid Date') {
-            const num = Number(rawTime);
-            if (!isNaN(num) && num > 0) {
-              const d = num < 1e12 ? new Date(num * 1000) : new Date(num);
-              if (!isNaN(d.getTime())) {
-                timestamp = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-              }
-            } else if (typeof rawTime === 'string') {
-              const d = new Date(rawTime);
-              if (!isNaN(d.getTime())) {
-                timestamp = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-              } else if (rawTime.toLowerCase() !== 'invalid date') {
-                timestamp = rawTime;
-              }
-            }
-          }
+          const timestamp = formatWhatsAppTimestamp(rawTime);
 
           return {
             id: c.id || jid,
